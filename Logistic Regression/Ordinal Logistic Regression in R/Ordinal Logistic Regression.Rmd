@@ -1,0 +1,88 @@
+---
+title: "Ordinal Logistic Regression"
+author: "Lian"
+date: "2016年8月18日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+Below are the steps to perform OLR in R:
+[Reference HTTP](https://www.analyticsvidhya.com/blog/2016/02/multinomial-ordinal-logistic-regression/)
+
+```{r Load the Libraries}
+require(foreign)
+require(ggplot2)
+require(MASS)
+require(Hmisc)
+require(reshape2)
+```
+
+```{r Load the data}
+dat <- read.dta("http://www.ats.ucla.edu/stat/data/ologit.dta")
+head(dat)
+```
+Let’s quickly understand the data.
+
+The data set has a dependent variable known as apply. It has 3 levels namely “unlikely”, “somewhat likely”, and “very likely”, coded in 1, 2, and 3 respectively. 3 being highest and 1 being lowest. This situation is best for using ordinal regression because of presence of ordered categories. Pared (0/1) refers to at least one parent has a graduate degree; public (0/1) refers to the type of undergraduate institute.
+
+For building this model, we will be using the polr command to estimate an ordered logistic regression. Then, we’ll specify Hess=TRUE to let the model output show the observed information matrix from optimization which is used to get standard errors.
+
+```{r Ordinal Logit model}
+m <- polr(apply ~ pared + public + gpa, data = dat, Hess=TRUE)
+summary(m)
+```
+
+We see the usual regression output coefficient table including the value of each coefficient, standard errors, t values, estimates for the two intercepts, residual deviance and AIC. AIC is the information criteria. Lesser the better.
+
+Now we’ll calculate some essential metrics such as p-Value, CI, Odds ratio
+
+```{r calculate some essential metrics}
+ctable <- coef(summary(m))
+ctable
+p <- pnorm(abs(ctable[, "t value"]), lower.tail = FALSE) * 2
+ctable <- cbind(ctable, "p value" = p)
+ctable
+ci <- confint(m)
+ci  # confidence intervals
+exp(coef(m))
+exp(cbind(OR = coef(m), ci))
+```
+### Interpretation
+1. One unit increase in parental education, from 0 (Low) to 1 (High), the odds of “very likely” applying versus “somewhat likely” or “unlikely” applying combined are 2.85 greater .
+
+2. The odds “very likely” or “somewhat likely” applying versus “unlikely” applying is 2.85 times greater .
+
+3. For gpa, when a student’s gpa moves 1 unit, the odds of moving from “unlikely” applying to “somewhat likely” or “very likley” applying (or from the lower and middle categories to the high category) are multiplied by 1.85.
+
+Let’s now try to enhance this model to obtain better prediction estimates.
+
+```{r}
+summary(m)
+summary(update(m, method = "probit", Hess = TRUE), digits = 3)
+summary(update(m, method = "logistic", Hess = TRUE), digits = 3)
+summary(update(m, method = "cloglog", Hess = TRUE), digits = 3)
+```
+Let’s add interaction terms here
+```{r}
+head(predict(m, dat, type = "p"))
+addterm(m, ~.^2, test = "Chisq")
+m2 <- stepAIC(m, ~.^2)
+m2
+summary(m2)
+m2$anova
+anova(m, m2)
+```
+
+```{r to plot this model}
+m3 <- update(m, Hess=TRUE)
+pr <- profile(m3)
+confint(pr)
+plot(pr)
+pairs(pr)
+```
+
+

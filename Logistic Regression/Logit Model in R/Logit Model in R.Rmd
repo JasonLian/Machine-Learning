@@ -1,0 +1,95 @@
+---
+title: "Logit Model in R"
+author: "Lian"
+date: "2016年8月3日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Logit Model in R
+- [Reference](http://datascienceplus.com/perform-logistic-regression-in-r/)
+- [Titanic data from kaggle](https://www.kaggle.com/c/titanic/data)
+
+### The data cleaning process
+```{r}
+# Make sure that the parameter na.strings is equal to c("") so that each missing value is coded as a NA.
+training.data.raw <- read.csv('.//Data//train.csv',header=T,na.strings=c(""))
+head(training.data.raw)
+
+# Now we need to check for missing values and look how many unique values there are for each variable using the sapply() function which applies the function passed as argument to each column of the dataframe.
+sapply(training.data.raw,function(x) sum(is.na(x)))
+sapply(training.data.raw, function(x) length(unique(x)))
+
+# A visual take on the missing values might be helpful: the Amelia package has a special plotting function missmap() that will plot your dataset and highlight missing values:
+library(Rcpp)
+library(Amelia)
+missmap(training.data.raw, main = "Missing values vs observed")
+
+# Using the subset() function we subset the original dataset selecting the relevant columns only.
+data <- subset(training.data.raw,select=c(2,3,5,6,7,8,10,12))
+
+# a typical approach is to replace the missing values with the average, the median or the mode of the existing one. I’ll be using the average
+data$Age[is.na(data$Age)] <- mean(data$Age,na.rm=T)
+
+# As far as categorical variables are concerned, using the read.table() or read.csv() by default will encode the categorical variables as factors. A factor is how R deals categorical variables
+sapply(data, function(x) is.factor(x))
+# For a better understanding of how R is going to deal with the categorical variables, we can use the contrasts() function. This function will show us how the variables have been dummyfied by R and how to interpret them in a model.
+contrasts(data$Sex)
+contrasts(data$Embarked)
+
+# As for the missing values in Embarked, since there are only two, we will discard those two rows (we could also have replaced the missing values with the mode and keep the datapoints).
+data <- data[!is.na(data$Embarked),]
+rownames(data) <- NULL
+```
+
+### Model Fitting
+```{r}
+# We split the data into two chunks: training and testing set.
+train <- data[1:800,]
+test <- data[801:889,]
+
+# Now, let’s fit the model. Be sure to specify the parameter family=binomial in the glm() function.
+model <- glm(Survived ~.,family=binomial(link='logit'),data=train)
+# By using function summary() we obtain the results of our model
+# Remember that in the logit model the response variable is log odds: ln(odds) = ln(p/(1-p)) = a*x1 + b*x2 + … + z*xn. Since male is a dummy variable, being male reduces the log odds by 2.75 while a unit increase in age reduces the log odds by 0.042.
+summary(model)
+
+# Now we can run the anova() function on the model to analyze the table of deviance
+anova(model, test="Chisq")
+# The difference between the null deviance and the residual deviance shows how our model is doing against the null model (a model with only the intercept). The wider this gap, the better. Analyzing the table we can see the drop in deviance when adding each variable one at a time. Again, adding Pclass, Sex and Age significantly reduces the residual deviance. The other variables seem to improve the model less even though SibSp has a low p-value. A large p-value here indicates that the model without the variable explains more or less the same amount of variation. Ultimately what you would like to see is a significant drop in deviance and the AIC.
+
+# While no exact equivalent to the R2 of linear regression exists, the McFadden R2 index can be used to assess the model fit.
+library(pscl)
+pR2(model)
+```
+
+### Assessing the predictive ability of the model
+now we would like to see how the model is doing when predicting y on a new set of data. By setting the parameter **type='response'**, R will output probabilities in the form of **P(y=1|X)**. Our decision boundary will be 0.5. If P(y=1|X) > 0.5 then y = 1 otherwise y=0. Note that for some applications different decision boundaries could be a better option
+```{r}
+fitted.results <- predict(model,newdata=subset(test,select=c(2,3,4,5,6,7,8)),type='response')
+fitted.results <- ifelse(fitted.results > 0.5,1,0)
+# why is there some NA in predicted result?
+sum(is.na(fitted.results))
+
+misClasificError <- mean(fitted.results != test$Survived, na.rm = TRUE)
+print(paste('Accuracy',1-misClasificError))
+# However, keep in mind that this result is somewhat dependent on the manual split of the data that I made earlier, therefore if you wish for a more precise score, you would be better off running some kind of cross validation such as k-fold cross validation.
+
+# As a last step, we are going to plot the ROC curve and calculate the AUC (area under the curve) which are typical performance measurements for a binary classifier. As a rule of thumb, a model with good predictive ability should have an AUC closer to 1 (1 is ideal) than to 0.5.
+library(ROCR)
+p <- predict(model, newdata=subset(test,select=c(2,3,4,5,6,7,8)), type="response")
+pr <- prediction(p, test$Survived)
+prf <- performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf)
+
+auc <- performance(pr, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+```
+
+
+
+

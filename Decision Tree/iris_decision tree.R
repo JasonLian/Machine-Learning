@@ -1,0 +1,6 @@
+iris <- read.csv("iris.csv")
+str(iris)
+library(C50)
+iris_model <- C5.0(Name~.,data=iris)
+summary(iris_model)
+plot(iris_model)

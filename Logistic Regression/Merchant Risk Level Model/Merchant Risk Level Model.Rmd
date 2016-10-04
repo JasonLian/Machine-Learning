@@ -1,0 +1,78 @@
+---
+title: "Logit Regression for predicting merchant risk level"
+author: "Lian"
+date: "2016年8月18日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+Below are the steps to perform Logit Regression in R:
+
+```{r Load the Libraries, eval = FALSE}
+require(MASS)
+require(xlsx)
+require(nnet)
+require(stringr)
+```
+
+```{r Load the data}
+data <- read.xlsx2("Index Data.xls", sheetIndex=2, header=TRUE)
+# head(data)
+str(data)
+
+data$"账户类别" <- ifelse(data$"账户类别" == "对私",1,0)
+table(data$"账户类别")
+
+for(i in 2:38){
+  data[,i] <- as.character(data[,i])
+}
+
+for(i in 1:length(data[,1])){
+  data[i,11] <- as.numeric(str_replace(data[i,11],"%",""))/100
+  data[i,13] <- as.numeric(str_replace(data[i,13],"%",""))/100
+  data[i,15] <- as.numeric(str_replace(data[i,15],"%",""))/100
+  data[i,25] <- as.numeric(str_replace(data[i,25],"%",""))/100
+  data[i,27] <- as.numeric(str_replace(data[i,27],"%",""))/100
+}
+
+dummy_mcc <- class.ind(data$"商户MCC")
+
+for(i in 2:38){
+  data[,i] <- as.numeric(data[,i])
+}
+
+combine <- cbind(data[,2:28], dummy_mcc[,1:7])
+set.seed(123)
+random_sample <- sample(1:length(data[,1]), size=length(data[,1])*0.8)
+train <- combine[random_sample,]
+test <- combine[-random_sample,]
+str(train)
+```
+
+```{r Logit model}
+# for (i in 1:34){
+#   colnames(train)[i] <- paste("K",i,sep="")
+# }
+# train$K21 <- as.factor(train$K21)
+# str(train)
+# olm <- polr(K21 ~ ., data = train, Hess=TRUE)
+
+train$"商户危险等级" <- ifelse(train$"商户危险等级">3,1,0)
+table(train$"商户危险等级")
+lm <- glm(商户危险等级 ~ ., data = train, family="binomial")
+summary(lm)
+```
+```{r Logit Prediction}
+fitted.results <- predict(lm,newdata=test[,-21],type='response')
+fitted.results <- ifelse(fitted.results > 0.5,1,0)
+
+test_level <- ifelse(test$"商户危险等级">3,1,0)
+accuracy <- (length(fitted.results)-sum(abs(fitted.results-test_level)))/length(fitted.results)
+cat("The Prediction Accuracy of Logit Model is:",accuracy)
+```
+
+

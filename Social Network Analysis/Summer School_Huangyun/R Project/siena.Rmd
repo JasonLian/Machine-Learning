@@ -1,0 +1,92 @@
+---
+title: "Actor-based Longitudinal Network Models using RSiena"
+author: "Yun Huang"
+date: "July 27, 2016"
+output: html_document
+---
+
+## Setup
+
+```{r}
+library(RSiena)
+library(network)
+library(sna)
+setwd("C:/Users/yhu852/Desktop/s50_data")
+{r}
+
+Read data sets
+
+```{r}
+friend.data.w1 <- as.matrix(read.table("s50-network1.dat")) 
+friend.data.w2 <- as.matrix(read.table("s50-network2.dat")) 
+friend.data.w3 <- as.matrix(read.table("s50-network3.dat"))
+
+smoke <- as.matrix(read.table("s50-smoke.dat"))
+```
+
+A visual inspection of the adjacency matrices can sometimes be useful. This will help in highlighting outliers with respect to outdegrees or indegrees, if there are any of such outliers. (Please copy and paste the following code line by line. Otherwise, there may be errors.) 
+
+```{r}
+net1 <- as.network(friend.data.w1) 
+net2 <- as.network(friend.data.w2) 
+net3 <- as.network(friend.data.w3) 
+
+plot.sociomatrix(net1,drawlab=F,diaglab=F,xlab='friendship t1')
+plot.sociomatrix(net2,drawlab=F,diaglab=F,xlab='friendship t2')
+plot.sociomatrix(net3,drawlab=F,diaglab=F,xlab='friendship t3')
+```
+
+## Siena models
+
+### Create a siena data object including the longitudinal friendship networks and the smoking behavioral variable.
+
+```{r}
+friendship <- sienaNet(array(c(friend.data.w1, friend.data.w2, friend.data.w3), dim=c(50, 50, 3)))
+
+smokingbehavior <- sienaNet(smoke, type="behavior")
+mybehaviordata <- sienaDataCreate(friendship,smokingbehavior)
+```
+
+###	Using your hypotheses, you can begin to construct a list of parameters (or effects) to test using your Siena model. The function getEffects creates a data frame of effects with a number of extra properties for use in RSiena:
+
+```{r}
+myeff <- getEffects(mybehaviordata)
+myeff
+```
+
+To include the effects of the number of actors at distance 2, we add onto the effects that already exist in myeff by typing:
+```{r}
+myeff <- includeEffects(myeff,  nbrDist2)
+```
+
+To include the effects of smoking on friendship formation:
+```{r}
+myeff <- includeEffects(myeff,  egoX, altX, sameX, interaction1 = "smokingbehavior")
+```
+This adds to the model the effects of the ego smoking, the alter smoking, and if ego and alter are the same in their smoking behavior (both smoking or non-smoking). 
+
+
+To further include the effects of all of a node's friends' smoking behavior on the node's own smoking behavior:
+```{r}
+myeff <- includeEffects(myeff, name = "smokingbehavior" ,totSim, interaction1 = "friendship")
+```
+
+
+###	Next, we need to create a Siena model object that we will be testing our parameters on. Type the following to create the object: 
+
+```{r}
+mymodel <- sienaModelCreate(useStdInits = FALSE, projname = 's50_3')
+# useStdInits = FALSE means that we will not be using standard initial values, but will instead be using the values that are contained in initialValue column in the effects object myeff. 
+```
+
+###	Finally, we get to the simulation part. Parameters of the model are estimated by the function siena07. This function fits the specified model and effects to the data. 
+
+```{r}
+ans1 <- siena07(mymodel, data=mybehaviordata, effects=myeff, batch=FALSE, verbose=FALSE)
+ans1
+```
+
+A new window labeled Siena07 with a picture of an old building should pop up, showing the iterations of simulations R goes through. The window should close after the simulations are complete.
+
+
+###	The last step is to discuss your results and come up with a conclusion. Were the hypotheses supported? Use the estimates and convergence t-ratios to explain your answer. Remember, a t-ratio < 0.1 means that the parameter converged to a reliable value. A parameter is significant if the estimate / standard error is > 2. 

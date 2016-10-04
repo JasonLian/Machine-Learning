@@ -1,0 +1,166 @@
+---
+title: "Lab 3 - Exponential Random Graph Modeling"
+author: "Yun Huang"
+date: "July 27, 2016"
+output: html_document
+---
+
+The purpose of this assignment is to familiarize yourself with Exponential Random Graph Models (ERGM's) and their analysis using R. All questions are based on datasets that are included in R's ERGM package.
+
+## Part 0: Install the ERGM Package
+1)	Open R or R studio. Then, download and install the "ergm" and "sna" packages.
+
+```{r}
+#install.packages("ergm")
+#install.packages("sna") 
+library(statnet)
+```
+
+## Part I: Hypothesis Testing on the Padget Florentine Network Using QAP
+1)	We will be using the Padgett Florentine family dataset. Load this network from the ergm package.
+
+```{r}
+data(florentine)
+```
+
+2)	There are two networks in this dataset: a set of marriage ties (flomarriage) and business ties (flobusiness). Briefly describe what the nodes and edges in this network represent.
+
+3)	First, we want to plot the networks to get an idea of what they look like. Include a plot of the networks in your report.
+
+```{r}
+gplot(flomarriage)
+gplot(flobusiness)
+```
+
+Describe some features of these graphs.
+
+4)	We want to test if there is a significant correlation between marriage and business ties. We will use QAP to determine this.
+
+```{r}
+G = array(dim=c(16,16,2))
+G[,,1] = as.matrix(flomarriage)
+G[,,2] = as.matrix(flobusiness)
+Q = qaptest(G,gcor,g1=1,g2=2)
+summary(Q)
+plot(Q)
+```
+
+Include in your report the summary of QAP results. What is the p-value, and what is the interpretation of this value? Are marriage ties and business ties related? Include a plot of the simulated vs. realized correlation values to support your conclusion.
+
+### Part II: Hypothesis Testing on the Padget Florentine Network Using ERGMs
+5)	We will be using the Padgett Florentine family dataset. Load this network from the ergm package.
+
+```{r}
+data(florentine)
+```
+
+6)	We will start by creating a predictive model based on the edge density. The format of the ergm command is ergm(YourNetwork ~ Signature1 + Signature2 + ...)  where "YourNetwork" is a graph object, and the "Signatures" are aspects of the network. Note that the command format is similar to regression commands in R
+
+```{r}
+flo.mar.1 <- ergm(flomarriage ~ edges)
+flo.mar.1
+summary(flo.mar.1)
+```
+
+7)	Describe the edge parameter that you observe, is it positive? Negative? What is the p-value? Is the edge density significant?
+
+8)	The edge parameter here is the log of the edge odds, i.e. log(#dyads-w-edge/#dyads-no-edge). We can observe that there are 20 edges in the network, and there are 120 possible. Verify that the edge parameter corresponds to the log odds
+
+```{r}
+log(20/(120-20))
+```
+Now, find the probability of an edge between any individual:
+
+```{r}
+exp(-1.609)/(1+exp(-1.609))
+```
+
+In terms of probabilities, can you refine your interpretation of the edge significance?
+
+9)	Now, add the covariate "triangles" to the model.
+
+```{r}
+flo.mar.2 <- ergm(flomarriage ~ edges + triangles)    
+flo.mar.2
+summary(flo.mar.2)
+```
+
+10)	What is the outcome of the model? Report the p-values, sign, and conclusion of the hypothesis test. Do triangles drive the formation of the network?
+
+11)	ERGM's reveal the conditional log odds of a tie occurring in the network. Conditional log-odds of a tie between two actors here 
+
+= -1.675*(change in the number of ties) + 0.158 * (change in the number of triangles)
+
+In the above equation, the "change" is what would happen if a new tie was added. Clearly, adding a tie will result in a change of one edge. A tie could also add 0, 1, or 2 new triangles to the network. Find the conditional log odds of each type of tie.
+
+12)	There are many other structures you could examine. For instance 2-stars: kstar(2), 3-stars: kstar(3) isolates: isolates, etc. Select one of these signatures and run a new model including the signature. Report the p-values and interpretation
+
+13)	Let's run a model checking whether edges in the Florentine business network are predicted by edges in the marriage network. To do that, we can use an edge covariate parameter edgecov(). As in: ergm(MyNetwork ~ Signature1 + Signature2 + ... + edgecov(AnotherNetwork)). 
+
+```{r]}
+flo.mar.3 <- ergm(flobusiness ~ edges + edgecov(flomarriage)) 
+flo.mar.3
+summary(flo.mar.3)
+```
+
+What is the outcome of this model? Do marriage ties influence business ties?
+
+14)	We can also use node attributes in an ERGM model. For the Florentine families, we have an attribute called "wealth" in the network object. We want to test to see if nodes with higher wealth are more likely to form ties. First, create the wealth vector and visualize the network (in the graph, larger nodes represent wealthier nodes).
+
+```{r}
+w.vec <- flomarriage %v% 'wealth'  
+w.vec
+gplot(flomarriage, vertex.cex=w.vec/20)
+```
+
+Now, run the ERGM model to test the hypothesis that wealthy families tend to form ties. Note the use of the nodecov (node covariate) function.
+
+```{r}
+flo.mar.4 <- ergm(flomarriage ~ edges + nodecov("wealth"))    
+summary(flo.mar.4)
+```
+
+What can you conclude? Report p-values and outcome of the hypothesis test.
+
+15)	Finally, we can use functions of node attributes to make predictions. Consider building a model based on the absolute difference in family wealth.
+
+```{r}
+flo.mar.5 <- ergm(flomarriage ~ edges + absdiff("wealth"))   
+summary(flo.mar.5)
+```
+
+Interpret your findings. What does the sign and significance of the absdiff() coefficient mean?
+
+16)	Now, it is your turn to come up with a model. Using the code you have seen up to this point, come up with a unique hypothesis concerning business ties, marriage ties, wealth, or their combinations. Include the code for this model, a summary of the output, and your interpretation. You will be graded on creativity and interpretation, not complexity.
+
+Part III: Goodness of Fit and Model Diagnostics
+1)	After estimating parameters for your mode, you want to know how well it fits the observed data. We will use a goodness of fit procedure to generate a probability distribution for the degree distribution of a graph, and compare it to the observed instance. Check the goodness of fit for the degree:
+```{r}
+flo.mar.4.gof <- gof(flo.mar.4 ~ degree)
+flo.mar.4.gof
+```
+2)	Plot the goodness of fit. Save a copy for your report.
+```{r}
+plot(flo.mar.4.gof)
+```
+3)	Is the model a good fit? Do the estimates lie within the confidence intervals? Use the plot as well as the summary of the test to determine if the observed models match the model.
+
+4)	We can also check how good a fit the model is for other network characteristics. In this case, we will use geodesic distance, or the shortest path length between nodes in the network. The goodness of fit test will simulate 20 networks and compare the results to the realized network.
+
+```{r}
+flo.mar.4.gof2 <- gof(flo.mar.4 ~ distance, nsim=20) # gof based on 20 simulated nets
+summary(flo.mar.4.gof2)
+plot(flo.mar.4.gof2)
+```
+
+Is the model a good fit based on geodesic distance? Report based on the goodness of fit test and the plot. Save a copy of your plot with your report.
+
+5)	Because some of our models were estimated using Markov Chain Monte Carlo methods (MCMC), we need to run diagnostics to see if the models converged properly. Note we can't get (and don't need) these diagnostics for flo.mar.4 since it was not estimated using MCMC. This is because it was simple enough (i.e. a dyadic independence model) that we did not need MCMC estimation. However, our edge-triangle model did. Run the following commands. To view the plots better, try saving as a pdf (include the images in your report).
+
+```{r}
+mcmc.diagnostics(flo.mar.2)  # Use only this if you want R images
+```
+The left plot is called a trace plot - it shows the values the parameter took during the runtime of the chain. The right plot is usually called a marginal density plot. Basically, it is the (smoothened) histogram of the values in the trace-plot, i.e. the distribution of the values of the parameter in the chain. Do the variables look stable around their estimated values? Did the model converge?
+
+
+

@@ -1,0 +1,162 @@
+---
+title: "Understanding the MLE and EM algorithm"
+author: "Lian"
+date: "2016年8月1日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 理解“极大似然估计”和“期望最大化”算法
+- Given a set of observed data (an independent random sample), alongside a proposed model, how can we estimate the model parameters?
+- Reference http: http://rstudio-pubs-static.s3.amazonaws.com/1001_3177e85f5e4840be840c84452780db52.html
+
+```{r}
+set.seed(123)  ## ensures we all see the same output
+trueMean <- 10  ## suppose this true mean is unknown
+n <- 20
+x <- rnorm(n, mean = trueMean)  ## sample data from a Normal distribution
+x
+hist(x, col = "lavender")
+abline(v = mean(x), col = "red", lwd = 2)  ## highlight sample mean
+```
+
+---
+- 上述情况，已知均值和数据，可以通过 MLE 来估计方差
+- We call the 'most likely' estimate that we choose from the maximum likelihood approach, the maximum likelihood estimate. It is computed in the following way:
+- We make an assumption that our population follows a certain distribution, eg: Normal with unknown parameter(s).
+- We assume that the observed data was collected through a random sampling process, and that these data are independent.
+- For each of our observed data points, we can compute a 'likelihood', given the unknown parameters. This likelihood is just the value of the corresponding density function, evaluated at that particular data point.
+- We then compute the **joint likelihood function**, which is a combination of the likelihoods for each of the data points we observed. This is computed as the product of the likelihoods for each individual data point.
+- Now, we ask the question, if we view the joint likelihood function as a function of the parameters we wish to estimate, which set of parameters will actually maximize the joint likelihood function?
+
+---
+Eg: suppose I have three data points: 1, 2, 3. I know they come from a Normal distribution, but I don't know what the mean or variance is. What would the value of the joint likelihood function for mean=1.5,2,2.5 and sd=1?
+```{r}
+dat <- c(1,2,3)
+rbind(
+  prod( dnorm( dat, mean=1.5, sd=1 ) ),  # dnorm gives the density; prod returns the prodcut of all the values
+  prod( dnorm( dat, mean=2, sd=1 ) ),
+  prod( dnorm( dat, mean=2.5, sd=1 ) )
+)
+# what if we checked this over a grid of values?
+dat <- c(1,2,3)
+mean_grid <- seq(0, 4, by=0.1) ## values of the mean to check the likelihood at
+myLikelihood <- rep(0, length(mean_grid))
+for( i in seq_along( myLikelihood ) ) {
+  myLikelihood[i] <- prod( dnorm( dat, mean = mean_grid[i], sd=1 ) )
+}
+plot( myLikelihood ~ mean_grid, type="b" )
+abline(v = mean_grid[which.max(myLikelihood)])  # draw a vertical line at maximal mylikelihood
+```
+
+---
+#### [distinguishes between (observed) variables, latent variables, and parameters.](http://stats.stackexchange.com/questions/5136/when-do-you-consider-a-variable-is-a-latent-variable)
+- Regular variables are observed and have a distribution.
+- Latent variables are not observed and have a distribution. 
+- Parameters are not observed and do not have a distribution.
+
+When we do a likelihood approach, we assume that the data is constant, but the parameters can vary.
+However, there are plenty of things that make finding an analytic solution - the parameters that maximize the likelihood function, as an algebraic function of the data - difficult or impossible. A common example is missing data; other examples include 'hidden' or 'latent' variables.
+In such cases, we need approximate methods in order to either approximate the entire joint likelihood function, or to approximate the maximum of the likelihood function. This is where the EM algorithm comes in:
+
+## The EM algorithm is an iterative method for approximating the maximum of a likelihood function.
+In particular, the EM algorithm comes in when we have unobserved latent variabes. A typical example is that of **mixture distributions**, whereby
+- we have a set of distributions,
+- each observation comes from one of these distributions with some probability, but
+- we only observe the value of each observation, and not what distribution it came from.
+
+We'll start with a scenario where the groups should be obvious.
+- Suppose we flip a biased coin that comes up heads 25% of the time. If it's heads, we draw from a Normal distribution with mean 1, standard deviation 1. If it's tails, we draw from a Normal distribution with mean 7, standard deviation 1. We repeat this process 1000 times.
+- Just to be clear: **the latent variable here is the coin**; it has an associated parameter defining whether we are drawing from distribution 1 or 2 - ie, Bernoulli trials.
+
+```{r}
+set.seed(123)
+tau_1_true <- 0.25
+x <- y <- rep(0,1000)
+for( i in 1:1000 ) {
+  if( runif(1) < tau_1_true ) {
+    x[i] <- rnorm(1, mean=1)
+    y[i] <- "heads"
+  } else {
+    x[i] <- rnorm(1, mean=7)
+    y[i] <- "tails"
+  }
+}
+
+library(lattice)
+densityplot( ~x, 
+             par.settings = list(
+               plot.symbol = list(
+                 col=as.factor(y)
+                 )
+               )
+             )
+```
+
+---
+- Now, let's recap. There's three separate elements:
+  - The observed data,
+  - The distribution parameters, (Normal distribution means)
+  - The latent variables. (the 'mixture' probabilities)
+Let's start with initial values of mu1=0 and mu2=1 . To make things simple, we'll assume the standard deviation is known and fixed as sigma1=sigma2=1.
+
+---
+## The EM algorithm bounces back and forth between two processes:
+1. **Given the current parameters and the observed data, estimate the latent variables. **
+```{r}
+tau_1 <- 0.5 ## our initial believed proportion from dist. 1, chosen arbitrarily
+tau_2 <- 0.5 ## our initial believed proportion from dist. 2, chosen arbitrarily
+T_1 <- tau_1 * dnorm( x, mean=0 )
+T_2 <- tau_2 * dnorm( x, mean=1 )
+head( T_1 / (T_1 + T_2) )
+```
+So, we have a set of probabilities for each item. It seems like the first few observations probably came from distribution 2. (That is, our computed 'probabilities' that these observations came from distribution 1 are very low.) Now, we want to step to the second part of the EM algorithm.
+
+2. **Given the observed data and the latent variables, estimate the parameters.**
+The way we will handle this is essentially as a weighted average. Eg: for observation 1, which is 7.801, 0.0002893 of it should contribute to estimation of the mean for distribution 1, while 0.9997107 of it should contribute to estimation of the mean for distribution 2.
+```{r}
+P_1 <- T_1 / (T_1 + T_2)
+P_2 <- T_2 / (T_1 + T_2)
+
+mu_1 <- sum( P_1 * x ) / sum(P_1)
+mu_2 <- sum( P_2 * x ) / sum(P_2)
+
+c(mu_1, mu_2)
+```
+**After just one iteration, we can see that we have gotten much closer to the true mean values.** Now, we simply repeat the process, until the difference between our successive estimates of the mean are very small.
+Let's combine everything we've done into a single set of R code now. We'll run 10 iterations.
+```{r}
+## set the initial guesses for the distribution parameters
+mu_1 <- 0
+mu_2 <- 1
+
+## as well as the latent variable parameters
+tau_1 <- 0.5
+tau_2 <- 0.5
+
+for( i in 1:10 ) {
+
+  ## Given the observed data, as well as the distribution parameters,
+  ## what are the latent variables?
+  T_1 <- tau_1 * dnorm( x, mu_1 )
+  T_2 <- tau_2 * dnorm( x, mu_2 )
+
+  P_1 <- T_1 / (T_1 + T_2)
+  P_2 <- T_2 / (T_1 + T_2) ## note: P_2 = 1 - P_1
+
+  tau_1 <- mean(P_1)
+  tau_2 <- mean(P_2)
+
+  ## Given the observed data, as well as the latent variables,
+  ## what are the population parameters?
+  mu_1 <- sum( P_1 * x ) / sum(P_1)
+  mu_2 <- sum( P_2 * x ) / sum(P_2)
+
+  ## print the current estimates
+  print( c(mu_1, mu_2, mean(P_1)) )
+
+}
+```
