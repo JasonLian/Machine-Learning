@@ -1,0 +1,251 @@
+---
+title: "Fitting Distribution"
+author: "Lian"
+date: "2016年12月14日"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    theme: readable
+    highlight: tango
+    code_folding: show
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+- [泊松分布和指数分布：十分钟教程](http://www.woshipm.com/pmd/163461.html)
+- [How to know if a data follows a Poisson Distribution in R](http://stats.stackexchange.com/questions/78139/how-to-know-if-a-data-follows-a-poisson-distribution-in-r)
+
+## 1. Introduction
+We can identify 4 steps in fitting distributions:
+
+- Model/function choice: hypothesize families of distributions;
+- Estimate parameters;
+- Evaluate quality of fit;
+- Goodness of fit statistical tests
+
+
+## 2. Graphics
+```{r}
+library(magrittr)
+rnorm(n=200,m=10,sd=2) %>% hist(main="Histogram of observed data")
+x.norm<-rnorm(n=200,m=10,sd=2)
+```
+
+We can estimate frequency density using density()and plot()to plot the graphic
+```{r}
+plot(density(x.norm),main="Density estimate of data")
+```
+
+R allows to compute the empirical cumulative distribution function by ecdf()
+```{r}
+plot(ecdf(x.norm),main='Empirical cumulative distribution function')
+```
+
+- A Quantile-Quantile (Q-Q) plot is a scatter plot comparing the fitted and empirical distributions in terms of the dimensional values of the variable (i.e., empirical quantiles). It is a graphical technique for determining if a data set come from a known population. **In this plot on the y-axis we have empirical quantiles on the x-axis we have the ones got by the theorical model**.
+- A 45-degree reference line is also plotted. **If the empirical data come from the population with the choosen distribution, the points should fall approximately along this reference line**.
+```{r}
+z.norm<-(x.norm-mean(x.norm))/sd(x.norm) ## standardized data
+qqnorm(z.norm) ## drawing the QQplot
+abline(0,1) ## drawing a 45-degree reference line
+```
+
+If data differ from a normal distribution (i.e. data belonging from a Weibull pdf) we can use qqplot()in this way.
+```{r}
+x.wei<-rweibull(n=200,shape=2.1,scale=1.1) ## sampling from a Weibull distribution with parameters shape=2.1 and scale=1.1
+x.teo<-rweibull(n=200,shape=2, scale=1) ## theorical quantiles from a Weibull population with known paramters shape=2 e scale=1
+qqplot(x.teo,x.wei,main="QQ-plot distr. Weibull") ## QQ-plot
+abline(0,1) ## a 45-degree reference line is plotted
+qqplot(x.teo,x.teo,main="QQ-plot distr. Weibull") ## QQ-plot
+abline(0,1) ## a 45-degree reference line is plotted
+```
+
+## 3. Model Choice
+- The first step in fitting distributions consists in choosing the mathematical model or function to represent data in the better way. Sometimes the type of model or function can be argued by some hypothesis concerning the nature of data, often histograms and other graphical techniques can help in this step, but graphics could be quite subjective, so there are methods based on analytical expressions such us the **Pearson’s K criterion**.
+- Solving a particular differential equation we can obtain several families of function able to represent quite all empirical distributions. Those curves depend only by **mean, variability, skewness and kurtosis**. Standardizing data, the type of curve depends only by **skewness and kurtosis** measures:
+
+### 3.1 Discrete Data
+- Dealing with discrete data we can refer to Poisson’s distribution7 (Fig. 6) with probability mass function
+```{r}
+x.poi<-rpois(n=200,lambda=2.5)
+hist(x.poi,main="Poisson distribution")
+```
+
+### 3.2 Continuous Data
+- normal (gaussian) distribution
+```{r}
+curve(dnorm(x,m=10,sd=2),from=0,to=20,main="Normal distribution")
+plot(density(x.norm))
+```
+
+- gamma distribution
+```{r}
+curve(dgamma(x, scale=1.5, shape=2),from=0, to=15, main="Gamma distribution")
+```
+
+- Weibull distribution
+```{r}
+curve(dweibull(x, scale=2.5, shape=1.5),from=0, to=15, main="Weibull distribution")
+```
+
+### 3.3 Compute skewness and kurtosis index
+```{r}
+library(fBasics) ## package loading
+skewness(x.norm) ## skewness of a normal distribution
+kurtosis(x.norm) ## kurtosis of a normal distribution
+skewness(x.wei) ## skewness of a Weibull distribution
+kurtosis(x.wei) ## kurtosis of a Weibull distribution
+```
+
+## 4. Parameters Estimate
+
+- Maximum likelihood estimation begins with the mathematical expression known as a likelihood function of the sample data.. Loosely speaking, the likelihood of a set of data is the probability of obtaining that particular set of data given the chosen probability model This expression contains the unknown parameters. Those values of the parameter that maximize the sample likelihood are known as the maximum likelihood estimates (MLE).
+- In R environment we can get MLE by two statements:
+- mle() included in package stats4
+- fitdistr()included in package MASS
+- mle()allows to fit parameters by maximum likelihood method using iterative methods of numerical calculus to minimize the negative log-likelihood (which is the same of maximizing the log-likelihood). You have to specify the negative log-likelihood analytical expression as argument and giving some starting parameters estimates. In case of a gamma distribution:
+```{r warning=FALSE}
+library(stats4) ## loading package stats4
+x.gam<-rgamma(200,rate=0.5,shape=3.5)
+ll<-function(lambda,alfa) {
+  n<-200
+  x<-x.gam
+  -n*alfa*log(lambda)+n*log(gamma(alfa))-(alfa-1)*sum(log(x))+lambda*sum(x)
+} ## -log-likelihood function
+est<-mle(minuslog=ll, start=list(lambda=2,alfa=1))
+summary(est)
+```
+
+- In MASS package is available fitdistr() for maximum-likelihood fitting of univariate distributions **without any information about likelihood analytical expression**. It is enough to specify a data vector, the type of pdf (densfun) and eventually the list of starting values for iterative procedure (start).
+```{r}
+library(MASS) ## loading package MASS
+fitdistr(x.gam,"gamma") ## fitting gamma pdf parameters
+fitdistr(x.wei,densfun=dweibull,start=list(scale=1,shape=2))## fitting
+fitdistr(x.norm,"normal") ## fitting gaussian pdf parameters
+fitdistr(x.poi,"Poisson") ## fitting gaussian pdf parameters
+```
+
+### 4.1 Poisson
+```{r}
+my.pois<-rpois(100, 20)
+hist(my.pois, freq=FALSE)
+lines(density(my.pois, bw=0.8), col="red")
+library(MASS)
+my.mle<-fitdistr(my.pois, densfun="poisson")
+my.mle
+BIC(my.mle)
+```
+
+- The probability of having 25 or less counts is given by the function ppois.
+```{r}
+ppois(25, lambda=20)   # lower tail 
+```
+
+- The probability of having 25 or more counts is in the upper tail of the probability density function.
+```{r}
+ppois(25, lambda=20, lower=FALSE)   # upper tail 
+```
+
+## 5. Measures of goodness of fit
+- A goodness of fit measure is useful for matching empirical frequencies with fitted ones by a theorical model.
+- We have absolute and relative measures. Here is an example using R for count data (Poisson distribution):
+```{r}
+lambda.est<-mean(x.poi) ## estimate of parameter lambda
+tab.os<-table(x.poi)## table with empirical frequencies
+tab.os
+
+freq.os<-vector()
+for(i in 1: length(tab.os)) freq.os[i]<-tab.os[[i]] ## vector of emprical frequencies
+freq.ex<-(dpois(0:max(x.poi),lambda=lambda.est)*200) ## vector of fitted (expected) frequencies
+freq.os
+freq.ex
+
+acc<-mean(abs(freq.os-trunc(freq.ex))) ## absolute goodness of fit index
+acc
+acc/mean(freq.os)*100 ## relative (percent) goodness of fit index
+```
+
+- A graphical technique to evaluate the goodness of fit can be drawing pdf curve and histogram together
+```{r}
+h<-hist(x.norm,breaks=15)
+xhist<-c(min(h$breaks),h$breaks)
+yhist<-c(0,h$density,0)
+xfit<-seq(min(x.norm),max(x.norm),length=40)
+yfit<-dnorm(xfit,mean=mean(x.norm),sd=sd(x.norm))
+plot(xhist,yhist,type="s",ylim=c(0,max(yhist,yfit)), main='Normal pdf and histogram')
+lines(xfit,yfit, col='red')
+```
+
+## 6. Goodness of fit tests
+- **Goodness of fit tests indicate whether or not it is reasonable to assume that a random sample comes from a specific distribution**. They are a form of hypothesis testing where the null and alternative hypotheses are:
+  - H0: Sample data come from the stated distribution
+  - H1: Sample data do not come from the stated distribution
+
+- The chi-square test15 is the oldest goodness of fit test dating back to Karl Pearson (1900). The test may be thought of as a formal comparison of a histogram with the fitted density. An attractive feature of the chi-square (c2) goodness of fit test is that it can be applied to any univariate distribution for which you can calculate the cumulative distribution function. The chi-square goodness of fit test is applied to binned data (i.e., data put into classes). This is actually not a restriction since for non-binned data you can simply calculate a histogram or frequency table before generating the chi-square test. 
+However, the value of the chi-square test statistic is dependent on how the data is binned. Another disadvantage of this test is that it requires a sufficient sample size in order for the chi square approximation to be valid. The chisquare goodness of fit test can be applied either to discrete distributions or continuous ones while the Kolmogorov-Smirnov and Anderson-Darling tests are restricted to continuous distributions. Estimating model parameters with sample is allowed with this test. The chi-square test is defined for the hypothesis:
+  - H0: the data follow a specified distribution
+  - H1: the data do not follow the specified distribution
+
+- In R environment there are three ways to perform a chi-square test.
+- In case of count data we can use goodfit()included in vcd package
+```{r}
+library(vcd)## loading vcd package
+gf<-goodfit(x.poi,type= "poisson",method= "MinChisq")
+summary(gf)
+plot(gf,main="Count data vs Poisson distribution")
+```
+
+- The Kolmogorov-Smirnov16 test is used to decide if a sample comes from a population with a specific distribution.
+- Kolmogorov-Smirnov test is more powerful than chi-square test when sample size is not too great. For large size sample both the tests have the same power. The most serious limitation of Kolmogorov-Smirnov test is that the distribution must be fully specified, that is, location, scale, and shape parameters can’t be estimated from the data sample. 
+- Due to this limitation, many analysts prefer to use the Anderson-Darling goodness-offit test. However, the Anderson-Darling test is only available for a few specific distributions
+
+- In R we can perform Kolmogorov-Smirnov test using the function ks.test() and apply this test to a sample belonging from a Weibull pdf with known parameters (shape=2 and scale=1):
+```{r}
+ks.test(x.wei, "pweibull", shape=2, scale=1)
+x<-seq(0,2,0.1)
+plot(x,pweibull(x,scale=1,shape=2),type="l",col="red", main="ECDF and Weibull CDF")
+plot(ecdf(x.wei),add=TRUE)
+```
+
+### 6.1 Normality tests
+- Very often a statistician is called to test if data collected come or not from a normal population, we shall examine the main normality tests. **Shapiro-Wilk test19 is one of the most powerful normality tests, especially for small samples**.
+```{r}
+shapiro.test(x.norm)
+```
+
+- Jarque-Bera test is used a lot to test normalità in Econometric.
+```{r}
+library(tseries) ## package tseries loading
+jarque.bera.test(x.norm)
+```
+
+## 7. Appendix
+List of R statements useful in fitting distributions. The package including statement is written in parenthesis.
+
+- ad.test(): Anderson-Darling test for normality (nortest)
+- chisq.test(): chi-squared test (stats)
+- cut: divides the range of data vector into intervals
+- cvm.test(): Cramer-von Mises test for normality (nortest)
+- ecdf(): computes an empirical cumulative distribution function (stats)
+- fitdistr(): Maximum-likelihood fitting of univariate distributions (MASS)
+- goodfit(): fits a discrete (count data) distribution for goodness-of-fit tests (vcd)
+- hist(): computes a histogram of the given data values (stats)
+- jarque.bera.test(): Jarque-Bera test for normality (tseries)
+- ks.test(): Kolmogorov-Sminorv test (stats)
+- kurtosis(): returns value of kurtosis (fBasics)
+- lillie.test(): Lilliefors test for normality (nortest)
+- mle(): estimate parameters by the method of maximum likelihood (stats4)
+- pearson.test(): Pearson chi-square test for normality (nortest)
+- plot(): generic function for plotting of R objects (stats)
+- qqnorm(): produces a normal QQ plot (stats)
+- qqline(), qqplot(): produce a QQ plot of two datasets (stats)
+- sf.test(): test di Shapiro-Francia per la normalità (nortest)
+- shapiro.test():Shapiro-Francia test for normalità (stats)
+- skewness(): returns value of skewness (fBasics)
+- table(): builds a contingency table (stats)
+

@@ -1,0 +1,62 @@
+---
+title: "Wavelet Analysis"
+author: "Lian"
+date: "2016年11月7日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## [Wavelet Coherence using R](https://rpubs.com/ibn_abdullah/rwcoher)
+```{r}
+# Turning the package on for wavelet coherence.  If you haven't installed
+# yet, then go to Packages --> Click on Install --> Search for 'biwavelet'
+# --> Ok
+library(biwavelet)
+# Import your data
+Data <- read.csv("https://dl.dropboxusercontent.com/u/18255955/Tutorials/Commodities.csv")
+# Attach your data so that you can access variables directly using their
+# names
+attach(Data)
+```
+
+Our two variables are A=ISLX and B=GOLD.
+```{r}
+# Define two sets of variables with time stamps
+t1 = cbind(DATE, ISLX)
+t2 = cbind(DATE, GOLD)
+# Specify the number of iterations. The more, the better (>1000).  For the
+# purpose of this tutorial, we just set it = 10
+nrands = 10
+```
+
+```{r}
+wtc.AB = wtc(t1, t2, nrands = nrands)
+```
+
+```{r}
+# Plotting a graph
+par(oma = c(0, 0, 0, 1), mar = c(5, 4, 5, 5) + 0.1)
+plot(wtc.AB, plot.phase = TRUE, lty.coi = 1, col.coi = "grey", lwd.coi = 2, 
+    lwd.sig = 2, arrow.lwd = 0.03, arrow.len = 0.12, ylab = "Scale", xlab = "Period", 
+    plot.cb = TRUE, main = "Wavelet Coherence: A vs B")
+
+# Adding grid lines
+n = length(t1[, 1])
+abline(v = seq(260, n, 260), h = 1:16, col = "brown", lty = 1, lwd = 1)
+
+# Defining x labels
+axis(side = 3, at = c(seq(0, n, 260)), labels = c(seq(1999, 2015, 1)))
+```
+
+Interpretation:
+
+- Time is displayed on the horizontal axis, while the vertical axis shows the frequency (the lower the frequency, the higher the scale). Regions in time-frequency space where the two time series co-vary are located by the wavelet coherence.
+
+- Warmer colors (red) represent regions with significant interrelation, while colder colors (blue) signify lower dependence between the series. Cold regions beyond the significant areas represent time and frequencies with no dependence in the series.
+
+- An arrow in the wavelet coherence plots represents the lead/lag phase relations between the examined series. A zero phase difference means that the two time series move together on a particular scale. Arrows point to the right (left) when the time series are in phase (anti-phase).
+
+- When the two series are in phase, it indicates that they move in the same direction, and anti-phase means that they move in the opposite direction. Arrows pointing to the right-down or left-up indicate that the first variable is leading, while arrows pointing to the right-up or left-down show that the second variable is leading.

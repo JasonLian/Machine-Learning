@@ -1,0 +1,43 @@
+---
+title: "R for Data Science"
+author: "Lian"
+date: "2016年12月14日"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    theme: readable
+    highlight: tango
+    code_folding: show
+    df_print:
+      max.print: 10
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+[R for Data Science](http://r4ds.had.co.nz/)
+
+## 1. Introduction
+The majority of the packages that you will learn in this book are part of the so-called tidyverse. The packages in the tidyverse share a common philosophy of data and R programming, and are designed to work together naturally.
+
+```{r message=FALSE, warning=FALSE}
+# install.packages("tidyverse")
+library(tidyverse)
+```
+
+In this book we’ll use three data packages from outside the tidyverse:
+```{r}
+# install.packages(c("nycflights13", "gapminder", "Lahman"))
+```
+
+These packages provide data on airline flights, world development, and baseball that we’ll use to illustrate key data science ideas.
+
+> Explore
+
+
+
+

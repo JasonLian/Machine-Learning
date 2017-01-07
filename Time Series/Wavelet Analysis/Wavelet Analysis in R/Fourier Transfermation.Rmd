@@ -1,0 +1,340 @@
+---
+title: "Fourier Transformation"
+author: "Lian"
+date: "2016年11月7日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Fourier Transfermation
+- [Reference Site](http://www.di.fc.ul.pt/~jpn/r/fourier/fourier.html)
+
+### 1.Complex Wave
+Here are two examples of sine waves:
+```{r}
+xs <- seq(-2*pi,2*pi,pi/100)
+wave.1 <- sin(3*xs)
+wave.2 <- sin(10*xs)
+par(mfrow = c(1, 2))
+plot(xs, wave.1, type="l", ylim=c(-1,1)); abline(h=0,lty=3)
+plot(xs, wave.2, type="l", ylim=c(-1,1)); abline(h=0,lty=3)
+```
+
+which can be linearly combined into a complex wave:
+```{r}
+par(mfrow = c(1, 1))
+wave.3 <- 0.5 * wave.1 + 0.25 * wave.2
+plot(xs,wave.3,type="l"); title("Eg complex wave"); abline(h=0,lty=3)
+```
+
+### 2.Fourier Series
+Joseph Fourier showed that any periodic wave can be represented by a sum of simple sine waves. This sum is called the Fourier Series. The Fourier Series only holds while the system is linear. If there is, eg, some overflow effect (a threshold where the output remains the same no matter how much input is given), a non-linear effect enters the picture, breaking the sinusoidal wave and the superposition principle.
+```{r}
+par(mfrow = c(1, 1))
+wave.4 <- wave.3
+wave.4[wave.3>0.5] <- 0.5
+plot(xs,wave.4,type="l",ylim=c(-1.25,1.25)); title("overflowed, non-linear complex wave"); abline(h=0,lty=3)
+```
+
+Also, the Fourier Series only holds if the waves are periodic, ie, they have a repeating pattern (non periodic waves are dealt by the Fourier Transform, see below). 
+```{r}
+repeat.xs <- seq(-2*pi,0,pi/100)
+wave.3.repeat <- 0.5*sin(3*repeat.xs) + 0.25*sin(10*repeat.xs)
+plot(xs,wave.3,type="l"); title("Repeating pattern")
+points(repeat.xs,wave.3.repeat,type="l",col="red"); abline(h=0,v=c(-2*pi,0),lty=3)
+```
+
+Here’s a R function for plotting trajectories given a fourier series:
+```{r}
+plot.fourier <- function(fourier.series, f.0, ts) {
+  w <- 2*pi*f.0
+  trajectory <- sapply(ts, function(t) fourier.series(t,w))
+  plot(ts, trajectory, type="l", xlab="time", ylab="f(t)"); abline(h=0,lty=3)
+}
+
+# An eg
+plot.fourier(function(t,w) {sin(w*t)}, 1, ts=seq(0,1,1/100)) 
+```
+
+And the plotting of equation: $f(t)=0.5\times sin(3wt)+0.25\times sin(10wt)$
+```{r}
+acq.freq <- 100                    # data acquisition frequency (Hz)
+time     <- 6                      # measuring time interval (seconds)
+ts       <- seq(0,time,1/acq.freq) # vector of sampling time-points (s) 
+f.0      <- 1/time                 # fundamental frequency (Hz)
+
+dc.component       <- 0
+component.freqs    <- c(3,10)      # frequency of signal components (Hz)
+component.delay    <- c(0,0)       # delay of signal components (radians)
+component.strength <- c(.5,.25)    # strength of signal components
+
+f <- function(t,w) { 
+  dc.component + 
+  sum( component.strength * sin(component.freqs*w*t + component.delay)) 
+}
+
+plot.fourier(f,f.0,ts) 
+```
+
+### 3.Phase Shifts
+Another feature of the fourier series is phase shift. Phase shifts are translations in the x-axis for a given wave component. These shifts are measured in angles (radians).
+$$f(t)=0.5\times sin(3wt+\frac{\pi}{2})+0.25\times sin(10wt)$$
+```{r}
+component.delay <- c(pi/2,0)       # delay of signal components (radians)
+plot.fourier(f,f.0,ts)
+```
+
+### 4.DC Components
+This concept deals with translations over the y-axis. In this case corresponds to an additive constant signal.
+Applying a DC component of −2−2 to the previous ware would result in the following equation and plot:
+$$f(t)=-2 + 0.5\times sin(3wt+\frac{\pi}{2})+0.25\times sin(10wt)$$
+```{r}
+dc.component <- -2
+plot.fourier(f,f.0,ts)
+```
+
+### 5.Fourier Transform
+The Fourier Transform (FT) is a generalization to solve for non-periodic waves. The FT assumes that the finite analyzed segment corresponds to one period of an infinitely extended periodic signal.
+
+**Given a trajectory the fourier transform (FT) breaks it into a set of related cycles that describes it. Each cycle has a strength, a delay and a speed.**
+
+So, the FT algorithm receives a trajectory, apply its filters to find the appropriate cycles, and outputs the full set of cyclic components. There are two algorithms:
+
+- the Discrete Fourier Transform (DFT) which requires $O(n^2)$ operations (for n samples)
+- the Fast Fourier Transform (FFT) which requires $O(n.log(n))$ operations
+
+This tutorial does not focus on the algorithms. There’s a R function called ```fft``` that computes the FFT.
+
+```{r}
+library(stats)
+fft(c(1,1,1,1)) / 4  # to normalize
+## [1] 1+0i 0+0i 0+0i 0+0i
+fft(1:4) / 4  
+## [1]  2.5+0.0i -0.5+0.5i -0.5+0.0i -0.5-0.5i
+```
+
+### 6.Cycle's Propoties
+We mentioned that each cycle has a strength, a delay and a speed. How can we represent them?
+
+- The strength is represented by the circle size, which is controlled by $z$
+- The delay, or starting point, is given by an initial value of $d$
+- The speed will be represented by the rate of change of $d$ over time
+
+Here’s a little function to convert the fft() output to the animation output:
+```{r}
+# cs is the vector of complex points to convert
+convert.fft <- function(cs, sample.rate=1) {
+  cs <- cs / length(cs) # normalize
+
+  distance.center <- function(c)signif( Mod(c),        4)
+  angle           <- function(c)signif( 180*Arg(c)/pi, 3)
+  
+  df <- data.frame(cycle    = 0:(length(cs)-1),
+                   freq     = 0:(length(cs)-1) * sample.rate / length(cs),
+                   strength = sapply(cs, distance.center),
+                   delay    = sapply(cs, angle))
+  df
+}
+
+convert.fft(fft(1:4))
+```
+
+**A Fourier Transform converts a wave from the time domain into the frequency domain**
+
+To perform a IFT use ```fft(X.k, inverse=TRUE) / length(X.k)```.
+
+Anyway, here’s a function that applies the previous equation, ie, makes the IFT:
+```{r}
+# returns the x.n time series for a given time sequence (ts) and
+# a vector with the amount of frequencies k in the signal (X.k)
+get.trajectory <- function(X.k,ts,acq.freq) {
+  
+  N   <- length(ts)
+  i   <- complex(real = 0, imaginary = 1)
+  x.n <- rep(0,N)           # create vector to keep the trajectory
+  ks  <- 0:(length(X.k)-1)
+  
+  for(n in 0:(N-1)) {       # compute each time point x_n based on freqs X.k
+    x.n[n+1] <- sum(X.k * exp(i*2*pi*ks*n/N)) / N
+  }
+  
+  x.n * acq.freq 
+}
+```
+
+Here’s two useful functions:
+
+- ```plot.frequency.spectrum()``` plot a frequency spectrum of a given $X_k$
+- ```plot.harmonic()``` plots the i-th harmonic on the current plot
+
+```{r}
+plot.frequency.spectrum <- function(X.k, xlimits=c(0,length(X.k))) {
+  plot.data  <- cbind(0:(length(X.k)-1), Mod(X.k))
+
+  # TODO: why this scaling is necessary?
+  plot.data[2:length(X.k),2] <- 2*plot.data[2:length(X.k),2] 
+  
+  plot(plot.data, t="h", lwd=2, main="", 
+       xlab="Frequency (Hz)", ylab="Strength", 
+       xlim=xlimits, ylim=c(0,max(Mod(plot.data[,2]))))
+}
+
+# Plot the i-th harmonic
+# Xk: the frequencies computed by the FFt
+#  i: which harmonic
+# ts: the sampling time points
+# acq.freq: the acquisition rate
+plot.harmonic <- function(Xk, i, ts, acq.freq, color="red") {
+  Xk.h <- rep(0,length(Xk))
+  Xk.h[i+1] <- Xk[i+1] # i-th harmonic
+  harmonic.trajectory <- get.trajectory(Xk.h, ts, acq.freq=acq.freq)
+  points(ts, harmonic.trajectory, type="l", col=color)
+}
+```
+
+Let’s check that last eg. Notice that this plot is equal to the blue line in the animation:
+```{r}
+X.k <- fft(c(4,0,0,0))                   # get amount of each frequency k
+
+time     <- 4                            # measuring time interval (seconds)
+acq.freq <- 100                          # data acquisition frequency (Hz)
+ts  <- seq(0, time-1/acq.freq, 1/acq.freq) # vector of sampling time-points (s) 
+
+x.n <- get.trajectory(X.k, ts, acq.freq)   # create time wave
+
+plot(ts,x.n,type="l",ylim=c(-2,4),lwd=2)
+abline(v=0:time,h=-2:4,lty=3); abline(h=0)
+
+plot.harmonic(X.k,1,ts,acq.freq,"red")
+plot.harmonic(X.k,2,ts,acq.freq,"green")
+plot.harmonic(X.k,3,ts,acq.freq,"blue")
+```
+
+One important point is that any signal can be described in two ways:
+
+- a time domain, the x-axis is a time variable and the y-axis the signal’s amplitude
+- a frequency domain, the x-axis is a frequency variable and the y-axis the signal’s amplitude
+
+Sometimes it’s easier to deal with one description, sometimes with the other.
+
+The DFT and the IFT are the mathematical tools that translate between these two descriptions.
+
+### 7.Examples
+$$f(t)=1+0.75\times sin(3wt)+0.25\times sin(7wt)+0.5\times sin(10wt)$$
+```{r}
+acq.freq <- 100                    # data acquisition (sample) frequency (Hz)
+time     <- 6                      # measuring time interval (seconds)
+ts       <- seq(0,time-1/acq.freq,1/acq.freq) # vector of sampling time-points (s) 
+f.0 <- 1/time
+
+dc.component <- 1
+component.freqs <- c(3,7,10)        # frequency of signal components (Hz)
+component.delay <- c(0,0,0)         # delay of signal components (radians)
+component.strength <- c(1.5,.5,1) # strength of signal components
+
+f   <- function(t,w) { 
+  dc.component + 
+  sum( component.strength * sin(component.freqs*w*t + component.delay)) 
+}
+
+plot.fourier(f,f.0,ts=ts)
+```
+
+Let’s assume that we don’t know the functional form of trajectory, we only have its contents, the period and the sampling time points:
+```{r}
+w <- 2*pi*f.0
+trajectory <- sapply(ts, function(t) f(t,w))
+head(trajectory,n=30)
+```
+
+So, given that trajectory we can find where the frequency peaks are:
+```{r}
+X.k <- fft(trajectory)                   # find all harmonics with fft()
+plot.frequency.spectrum(X.k, xlimits=c(0,20))
+```
+
+And if we only had the frequency peaks we could rebuild the signal:
+```{r}
+x.n <- get.trajectory(X.k,ts,acq.freq) / acq.freq  # TODO: why the scaling?
+plot(ts,x.n, type="l"); abline(h=0,lty=3)
+points(ts,trajectory,col="red",type="l") # compare with original
+```
+
+Assume this time-series with a strong noise component:
+```{r}
+set.seed(101)
+acq.freq <- 200
+time     <- 1
+w        <- 2*pi/time
+ts       <- seq(0,time,1/acq.freq)
+trajectory <- 3*rnorm(101) + 3*sin(3*w*ts)
+plot(trajectory, type="l")
+```
+
+We can check if there’s some harmonic hidden in it (there is one, 3Hz harmonics):
+```{r}
+X.k <- fft(trajectory)
+plot.frequency.spectrum(X.k,xlimits=c(0,acq.freq/2))
+```
+
+And we find a peak at the 3 Hz harmonics, as expected!
+
+There are several R libraries (surprise!) that produce this type of frequency plots. Here’s one eg (the results are not exactly the same, which might be the consequence of slightly different algorithms…):
+
+```{r}
+# install.packages('GeneCycle')
+library(GeneCycle)
+
+f.data <- GeneCycle::periodogram(trajectory)
+harmonics <- 1:(acq.freq/2)
+
+plot(f.data$freq[harmonics]*length(trajectory), 
+     f.data$spec[harmonics]/sum(f.data$spec), 
+     xlab="Harmonics (Hz)", ylab="Amplitute Density", type="h")
+```
+
+Check also stats::spectrum() and TSA::periodogram().
+
+If there is a trend in the time series, it should be detrended.
+```{r}
+trajectory1 <- trajectory + 25*ts # let's create a linear trend 
+plot(trajectory1, type="l")
+```
+
+```{r}
+f.data <- GeneCycle::periodogram(trajectory1)
+harmonics <- 1:20
+plot(f.data$freq[harmonics]*length(trajectory1), 
+     f.data$spec[harmonics]/sum(f.data$spec), 
+     xlab="Harmonics (Hz)", ylab="Amplitute Density", type="h")
+```
+
+The trended time-series didn’t capture the signal.
+
+Let’s detrended it know, ie, find the linear trend and work with the residuals:
+```{r}
+trend <- lm(trajectory1 ~ts)
+detrended.trajectory <- trend$residuals
+plot(detrended.trajectory, type="l")
+```
+
+```{r}
+f.data <- GeneCycle::periodogram(detrended.trajectory)
+harmonics <- 1:20
+plot(f.data$freq[harmonics]*length(detrended.trajectory), 
+     f.data$spec[harmonics]/sum(f.data$spec), 
+     xlab="Harmonics (Hz)", ylab="Amplitute Density", type="h")
+```
+
+
+
+
+
+
+
+
+
+
