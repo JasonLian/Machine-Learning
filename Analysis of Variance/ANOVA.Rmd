@@ -2,149 +2,181 @@
 title: "ANOVA"
 author: "Lian"
 date: "2016年9月9日"
-output: html_document
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    theme: readable
+    highlight: tango
+    code_folding: show
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+> 参考资料：R语言实战 第九章 方差分析
 
-#------------------------------------------------------------------ #
-# R in Action: Chapter 9                                            #
-# requires that the multcomp, gplots, car, HH, effects,             #
-#     rrcov, mvoutlier, MASS packages have been installed           #
-#-------------------------------------------------------------------#
+- [CRAN Task View: Design of Experiments (DoE) & Analysis of Experimental Data](https://cran.r-project.org/web/views/ExperimentalDesign.html)
+
+# 0. Load Packages
+```{r, message=FALSE, warning=FALSE}
 # install.packages(c('multcomp', 'gplots', 'car', 'HH', 'effects', 'rrcov', 'mvoutlier', 'MASS'))
+library(multcomp)
+library(gplots)
+library(car)
+library(HH)
+library(effects)
+library(rrcov)
+library(mvoutlier)
+library(MASS)
+```
 
-# pause for each graph
-par(ask = FALSE)
-
-# save original graphical parameters
-opar <- par(no.readonly = TRUE)
-
-# Listing 9.1 - One-way ANOVA
-
-require(multcomp)
+# 1. 单因素方差分析
+```{r}
+data("cholesterol")
 attach(cholesterol)
+head(cholesterol)
 table(trt)
 aggregate(response, by = list(trt), FUN = mean)  # 各组均值和标准差
 aggregate(response, by = list(trt), FUN = sd)
 fit <- aov(response ~ trt)  # 检验组间差异，结果非常显著，说明五种疗法的效果不同
 summary(fit)
-library(gplots)  # 绘制各组均值及其置信区间的图形
 plotmeans(response ~ trt, xlab = "Treatment", ylab = "Response", 
-    main = "Mean Plot\nwith 95% CI")
+    main = "Mean Plot\nwith 95% CI") # 绘制各组均值及其置信区间的图形
 detach(cholesterol)
+```
 
-# Listing 9.2 - Tukey HSD pairwise group comparisons
+## 1.1 多重比较
+- 虽然 ANOVA 对各疗法的 F 检验表明五种药物疗法效果不同，但是并没有告诉你那种疗法与其他疗法不同，多重比较可以解决这个问题
+- TukeyHSD() 函数提供了对各组均值差异的成对检验，但使用前先要 `detach(package:HH)`
+- **图形中置信区间包含0的疗法说明差异不显著**
 
+```{r}
 TukeyHSD(fit)
-par(las = 2)
-par(mar = c(5, 8, 4, 2))
+par(las = 2)  # 旋转轴标签
+par(mar = c(5, 8, 4, 2))  # 增大左边界的面积
 plot(TukeyHSD(fit))
-par(opar)
+# par(opar)
+```
 
-# Multiple comparisons the multcomp package
-
-library(multcomp)
+- **multcomp 包中的 `glht()` 函数提供了多重均值比较更为全面的方法**
+- **有相同字母的组说明均值差异不显著**
+```{r}
 par(mar = c(5, 4, 6, 2))
 tuk <- glht(fit, linfct = mcp(trt = "Tukey"))
 plot(cld(tuk, level = 0.05), col = "lightgrey")
-par(opar)
+# par(opar)
+```
 
-# Assessing normality
+## 1.2 评估检验的假设条件
+- 单因素方差分析中，我们假设数据服从正态分布，各组方差相等
+- 使用 Q-Q 图来检验正态性假设，数据落在 95% 的置信区间内，说明满足正态性假设
 
-library(car)
-qqPlot(lm(response ~ trt, data = cholesterol), simulate = TRUE, 
-    main = "QQ Plot", labels = FALSE)
+```{r}
+qqPlot(lm(response ~ trt, data = cholesterol), simulate = TRUE, main = "QQ Plot", labels = FALSE)
+```
 
-# Assessing homogeneity of variances
-
+- 方差齐性检测可以用 Bartlett 检验，结果显示不能拒绝方差齐性的原假设，各组之间的方差没有显著差异
+```{r}
 bartlett.test(response ~ trt, data = cholesterol)
+```
 
-# Assessing outliers
-
-library(car)
+- 方差齐性分析对离群点非常敏感，可以用 outlierTest() 函数做离群点检验。结果显示并没有证据说明数据中含有离群点
+```{r}
 outlierTest(fit)
+```
 
-# Listing 9.3 - One-way ANCOVA
+# 2. 单因素协方差分析
+- ANCOVA 是 ANOVA 的扩展，包含了一个或多个定量的协变量
 
+```{r}
 data(litter, package = "multcomp")
+head(litter)
 attach(litter)
 table(dose)
 aggregate(weight, by = list(dose), FUN = mean)
 fit <- aov(weight ~ gesttime + dose)
 summary(fit)
+```
 
-# Obtaining adjusted means
-
-library(effects)
+- 获取调整的组均值，即去除协变量效应之后的组均值
+```{r}
 effect("dose", fit)
+```
 
-# Listing 9.4 - Multiple comparisons using user supplied contrasts
-
-library(multcomp)
+- 假定你对未用药条件与其他三种用药条件的影响是否不同感兴趣
+```{r}
 contrast <- rbind(`no drug vs. drug` = c(3, -1, -1, -1))
 summary(glht(fit, linfct = mcp(dose = contrast)))
+```
 
-# Listing 9.5 - Testing for Homegeneity of Regression Slopes
+## 2.1 评估检验的假设条件
+- 除了正态性和同方差性假设，ANCOVA 还假定回归斜率相同。可以看到交互项不显著，支持了斜率相等的假设。
 
-library(multcomp)
-fit2 <- aov(weight ~ gesttime * dose)
+```{r}
+fit2 <- aov(weight ~ gesttime * dose, data=litter)
 summary(fit2)
+```
 
-# Visualizing a one-way ANCOVA
-
-library(HH)
+## 2.2 结果可视化
+```{r}
 ancova(weight ~ gesttime + dose, data = litter)
+ancova(weight ~ gesttime*dose, data = litter)  # 允许斜率不同，这对可视化那些违背回归斜率同质性的实例非常有用
+```
 
-# Listing 9.6 - Two way ANOVA
-
+# 3. 双因素方差分析
+```{r}
+data("ToothGrowth")
+head(ToothGrowth)
 attach(ToothGrowth)
 table(supp, dose)
 aggregate(len, by = list(supp, dose), FUN = mean)
 aggregate(len, by = list(supp, dose), FUN = sd)
 fit <- aov(len ~ supp * dose)
 summary(fit)
+```
 
-# plotting interactions
+```{r}
+interaction.plot(dose, supp, len, type = "b", col = c("red", "blue"), pch = c(16, 18), main = "Interaction between Dose and Supplement Type")
+```
 
-interaction.plot(dose, supp, len, type = "b", col = c("red", 
-    "blue"), pch = c(16, 18), 
-    main = "Interaction between Dose and Supplement Type")
-    
-library(gplots)
-plotmeans(len ~ interaction(supp, dose, sep = " "), 
-    connect = list(c(1, 3, 5), c(2, 4, 6)), 
-    col = c("red", "darkgreen"), 
-    main = "Interaction Plot with 95% CIs", 
-    xlab = "Treatment and Dose Combination")
-    
-library(HH)
+```{r}
+plotmeans(len ~ interaction(supp, dose, sep = " "), connect = list(c(1, 3, 5), c(2, 4, 6)), col = c("red", "darkgreen"), main = "Interaction Plot with 95% CIs", xlab = "Treatment and Dose Combination")
+```
+
+```{r}
 interaction2wt(len ~ supp * dose)
+```
 
-# Listing 9.7 - Repeated measures ANOVA with one between 
-# and within groups factor
+# 4. 重复测量方差分析
+- 含一个组间因子（两种植物类型：魁北克 vs. 密西西比）和组内因子（七种二氧化碳水平）的重复测量方差分析
 
+```{r}
+data("CO2")
+head(CO2)
 w1b1 <- subset(CO2, Treatment == "chilled")
-fit <- aov(uptake ~ (conc * Type) + Error(Plant/(conc)), 
-    w1b1)
+fit <- aov(uptake ~ (conc * Type) + Error(Plant/(conc)), w1b1)
 summary(fit)
 
 par(las = 2)
 par(mar = c(10, 4, 4, 2))
-with(w1b1, interaction.plot(conc, Type, uptake, type = "b", 
-    col = c("red", "blue"), pch = c(16, 18), main = "Interaction Plot for Plant Type and Concentration"))
-boxplot(uptake ~ Type * conc, data = w1b1, col = (c("gold", 
-    "green")), main = "Chilled Quebec and Mississippi Plants", 
-    ylab = "Carbon dioxide uptake rate (umol/m^2 sec)")
-par(opar)
+with(w1b1, interaction.plot(conc, Type, uptake, type = "b", col = c("red", "blue"), pch = c(16, 18), main = "Interaction Plot for Plant Type and Concentration"))
+boxplot(uptake ~ Type * conc, data = w1b1, col = (c("gold", "green")), main = "Chilled Quebec and Mississippi Plants", ylab = "Carbon dioxide uptake rate (umol/m^2 sec)")
+# par(opar)
+```
 
-# Listing 9.8 - One-way MANOVA
+# 5. 多元方差分析
+- 因变量不止一个时，称为多元方差分析
+    - MANOVA 函数能对组间差异进行多元检验，F值显著说明三个组的营养值不同
+    - 由于多元检验是显著的，因此可以使用 summary.aov() 对每一个变量做单因素方差分析
 
-library(MASS)
+```{r}
+data("UScereal")
+head(UScereal)
 attach(UScereal)
 y <- cbind(calories, fat, sugars)
 aggregate(y, by = list(shelf), FUN = mean)
@@ -152,35 +184,40 @@ cov(y)
 fit <- manova(y ~ shelf)
 summary(fit)
 summary.aov(fit)
+```
 
-# Listing 9.9 - Assessing multivariate normality
-# identify points interactively with the mouse
+## 5.1 评估假设检验
+- 单因素多元方差分析有两个前提假设，一个是多元正态性，一个是方差-协方差矩阵同质性
 
+```{r}
+# Assessing multivariate normality
 center <- colMeans(y)
 n <- nrow(y)
 p <- ncol(y)
 cov <- cov(y)
 d <- mahalanobis(y, center, cov)
-coord <- qqplot(qchisq(ppoints(n), df = p), d, main = "QQ Plot Assessing Multivariate Normality", 
-    ylab = "Mahalanobis D2")
+coord <- qqplot(qchisq(ppoints(n), df = p), d, main = "QQ Plot Assessing Multivariate Normality", ylab = "Mahalanobis D2")
 abline(a = 0, b = 1)
-identify(coord$x, coord$y, labels = row.names(UScereal))
+# identify(coord$x, coord$y, labels = row.names(UScereal))
+```
 
+```{r}
 # multivariate outliers
-library(mvoutlier)
 outliers <- aq.plot(y)
 outliers
+```
 
-# Listing 9.10 - Robust one-way MANOVA
-# this may take a while...
+## 5.2 稳健多元方差分析
+```{r}
+# Wilks.test(y, shelf, method = "mcd")
+```
 
-library(rrcov)
-Wilks.test(y, shelf, method = "mcd")
+# 6. 用回归来做 ANOVA
 
-# Listing 9.11 - A regression approach to the ANOVA
-# problem in section 9.3
-
+```{r}
 fit.lm <- lm(response ~ trt, data=cholesterol)
 summary(fit.lm)
 
 contrasts(cholesterol$trt)
+```
+

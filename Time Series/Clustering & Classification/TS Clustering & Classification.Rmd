@@ -1,0 +1,40 @@
+---
+title: "TS Clustering & Classification"
+author: "Lian"
+date: "2017年2月17日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 0. Load Packages
+```{r}
+library(ggplot2)
+library(dtw)
+```
+
+# 1. Time Series Clustering
+
+- Time series clustering is to partition time series data into groups based on similarity or distance, so that time series in the same cluster are similar. For time series clustering with R, the first step is to work out an appropriate distance/similarity metric, and then, at the second step, use existing clustering techniques, such as k-means, hierarchical clustering, density-based clustering or subspace clustering, to find clustering structures.
+
+- Dynamic Time Warping (DTW) finds optimal alignment between two time series, and DTW distance is used as a distance metric in the example below. 
+
+- A data set of Synthetic Control Chart Time Series is used here, which contains 600 examples of control charts. Each control chart is a time series with 60 values. There are six classes: 1) 1-100 Normal, 2) 101-200 Cyclic, 3) 201-300 Increasing trend, 4)301-400 Decreasing trend, 5) 401-500 Upward shift, and 6) 501-600 Downward shift. The dataset is downloadable at [UCI KDD Archive.](http://kdd.ics.uci.edu/databases/synthetic_control/synthetic_control.html)
+
+```{r}
+sc <- read.table("http://kdd.ics.uci.edu/databases/synthetic_control/synthetic_control.data", header=F)
+# randomly sampled n cases from each class, to make it easy for plotting
+n <- 10
+s <- sample(1:100, n)
+idx <- c(s, 100+s, 200+s, 300+s, 400+s, 500+s)
+sample2 <- sc[idx,]
+observedLabels <- c(rep(1,n), rep(2,n), rep(3,n), rep(4,n), rep(5,n), rep(6,n))
+# compute DTW distances
+distMatrix <- dist(sample2, method="DTW")
+# hierarchical clustering
+hc <- hclust(distMatrix, method="average")
+plot(hc, labels=observedLabels, main="")
+```
+

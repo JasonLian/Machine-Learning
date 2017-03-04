@@ -1,0 +1,170 @@
+---
+title: "Survival Analysis in R"
+author: "Lian"
+date: "2017年1月13日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+> [PDF Address](https://www.openintro.org/download.php?file=survival_analysis_in_R&referrer=/stat/surv.php)
+
+# 1. R Packages & Dataset
+```{r}
+# install.packages("survival")
+# install.packages("KMsurv")
+# install.packages("OIsurv")
+library(survival)
+library(KMsurv)
+library(OIsurv)
+```
+
+```{r}
+data(aids)
+head(aids)
+```
+
+# 2. Survival Objects
+- Before complex functions may be performed, the data has to be put into the proper format: a survival object. In particular, the constructions that will be outlined here are based on the data that is right-censored or left-truncated and right-censored, and the function Surv() will be used to construct these survival objects.
+- **Right-censored :: For right-censored data, only the time and time2 arguments need be filled:**
+
+```{r}
+data(tongue)
+attach(tongue)
+head(tongue)
+my.surv.object <- Surv(time[type==1], delta[type==1])
+my.surv.object
+my.surv.object <- Surv(time, delta)
+my.surv.object
+detach(tongue)
+```
+
+- **Left-truncated and right-censored :: For left-truncated and right-censored data, the first three arguments in Surv() will be filled:**
+- The left-truncation time is entered first as the variable time; the event time (or censoring time) is time2; the indicator variable for whether the event was observed is assigned to event.
+
+```{r}
+data(psych)
+attach(psych)
+head(psych)
+my.surv.object <- Surv(age, age+time, death)
+my.surv.object
+detach(psych)
+```
+
+- Other options :: To do interval censoring, use time for the left ends of the intervals, time2 for the right ends of the intervals, and type="interval2"; event is not used for interval censoring. There are more types of survival data that may be transformed into a survival object, however, they will not be discussed here. Note that not all functions will accept all types of data. For example, interval-censored data will not be accepted by the majority of the functions in survival.
+
+# 3. Kaplan-Meier estimate and pointwise bounds
+> `survfit(formula, conf.int = 0.95, conf.type = "log")` :: The function survfit() is used to find the Kaplan-Meier estimate of the survival function.
+
+```{r}
+data(tongue)
+attach(tongue)
+my.surv <- Surv(time[type==1], delta[type==1])
+my.surv
+my.fit <- survfit(my.surv~1)
+
+summary(my.fit)$surv # returns the Kaplan-Meier estimate at each t_i
+summary(my.fit)$time # {t_i}
+summary(my.fit)$n.risk # {Y_i}
+summary(my.fit)$n.event # {d_i}
+summary(my.fit)$std.err # standard error of the K-M estimate at {t_i}
+summary(my.fit)$lower # lower pointwise estimates (alternatively, $upper)
+str(my.fit) # full summary of the my.fit object
+str(summary(my.fit)) # full summary of the my.fit object
+
+plot(my.fit, main="Kaplan-Meier estimate with 95% confidence bounds", xlab="time", ylab="survival function")
+```
+
+- Sometimes different groups are contained in a single Surv object. For instance, the type variable in the tongue data set describes patient DNA profiles. **We can obtain the Kaplan-Meier estimate for each of these groups by regressing the Surv object on the type variable:**
+- **It is also reasonable to use several variables on the right side of the equation.** The summary of my.fit1 will contain an additional list item – strata, accessible via summary(my.fit1)$strata – that designates which components of the output correspond to which groups.
+
+```{r}
+my.fit1 <- survfit(Surv(time, delta) ~ type) # here the key is "type"
+plot(my.fit1)
+detach(tongue)
+```
+
+# 4. Simultaneous confidence bands
+- See the details in PDF (OIsurv Package)
+
+# 5. Cumulative hazard function
+- While no function in the survival package calculates either form automatically, the object returned by summary(survfit()) can be used to calculate the estimates
+
+```{r}
+data(tongue); attach(tongue)
+my.surv <- Surv(time[type==1], delta[type==1])
+my.fit <- summary(survfit(my.surv ~ 1))
+H.hat <- -log(my.fit$surv)
+H.hat <- c(H.hat, tail(H.hat, 1))
+
+```
+
+- The Nelson-Aalen estimator may also be constructed:
+```{r}
+h.sort.of <- my.fit$n.event / my.fit$n.risk
+H.tilde <- cumsum(h.sort.of)
+H.tilde <- c(H.tilde, tail(H.tilde, 1))
+plot(c(my.fit$time, 250), H.hat, xlab="time", ylab="cumulative hazard",main="comparing cumulative hazards", ylim=range(c(H.hat, H.tilde)), type="s")
+points(c(my.fit$time, 250), H.tilde, lty=2, type="s")
+legend("topleft", legend=c("H.hat","H.tilde"), lty=1:2)
+detach(tongue)
+```
+
+# 6. Tests for two or more samples
+- Tests if there is a difference between two or more survival curves using the G-rho family of tests, or for a single curve against a known alternative.
+
+```{r}
+data(btrial); attach(btrial) # time variable warning omitted
+survdiff(Surv(time, death) ~ im) # output omitted
+# The default is rho=0 and corresponds to the log-rank test
+survdiff(Surv(time, death) ~ im, rho=1) # some output omitted
+detach(btrial)
+```
+
+# 7. Cox proportional hazards model, constant covariates
+- The function coxph() fits a Cox PH model to the supplied data. The first argument is a formula, where the response is a survival object.
+- Two covariates have been used in this example. The second argument listed, method, specifies how ties are handled. The default is "efron", and the other options are "breslow" and "exact"
+
+```{r}
+data(burn); attach(burn)
+my.surv <- Surv(T1, D1)
+coxph.fit <- coxph(my.surv ~ Z1 + as.factor(Z11), method="breslow")
+coxph.fit
+```
+
+- More complex hypotheses may be checked using other items from the model fit:
+```{r}
+co <- coxph.fit$coefficients # may use coxph.fit$coeff instead
+va <- coxph.fit$var # I^(-1), estimated cov matrix of the estimates
+ll <- coxph.fit$loglik # log-likelihood for alt and null MLEs, resp.
+```
+
+- **To obtain the baseline survival function from a Cox PH model, apply survfit() to coxph()**. The object returned by survfit() has the familiar characteristics and properties as before. For instance, the baseline survival function may be plotted using the plot() function
+
+```{r}
+my.survfit.object <- survfit(coxph.fit)
+plot(my.survfit.object)
+```
+
+# 8. Cox proportional hazards model, time-dependent covariates
+- Previously considered covariates were unchanging attributes, such as treatment group or control group or a patient's race. Now we consider time-dependent covariates, such as interventions or environmental factors that might result in a change mid-study.
+- 现实数据总是离散的（比如年度数据、月度数据），故可将每个个体的单一记录分成几条记录，对应于几个时间段，使得在每个时间段内 TVC 为常数，然后沿用解释变量不随时间而变的方法进行估计
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

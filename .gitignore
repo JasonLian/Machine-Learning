@@ -18,6 +18,7 @@
 *.CHM
 *.pdf
 *.rds
+*.html
 
 ##== R gitignore ====
 # History files

@@ -1,0 +1,143 @@
+---
+title: "dtw"
+author: "Lian"
+date: "2017年2月18日"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    theme: readable
+    highlight: tango
+    code_folding: show
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Packages
+```{r, message=FALSE, warning=FALSE}
+library(dtw)
+```
+
+- [Welcome to Dynamic Time Warp project!](http://dtw.r-forge.r-project.org/)
+
+## 3. Compute Alignments
+- The aami3a time series included in the package contains a reference electrocardiogram from the PhysioBank dataset (Goldberger et al. 2000). We extract two non-overlapping windows from it, and compute their optimal alignment with the default dtw settings.
+
+```{r}
+data("aami3a")
+ref <- window(aami3a, start = 0, end = 2)
+test <- window(aami3a, start = 2.7, end = 5)
+ts.plot(ref, test)
+alignment <- dtw(test, ref)
+alignment$distance
+```
+
+- In alignment$distance one finds the cumulative (unnormalized) cost for the alignment
+- index1 and index2 are two integer vectors of the same length, listing the matching indices in the query and reference time series, respectively
+
+## 3.1. Step patterns and local slope constraints
+- **Step patterns list sets of allowed transitions between matched pairs, and the corresponding weights**
+- Patterns are selected by passing an appropriate instance to the step.pattern argument of the dtw function call, as in the following example: Compute the same alignment of the previous example, **assuming the well-known asymmetric pattern**
+
+```{r}
+alignment <- dtw(test, ref, step.pattern = asymmetric)
+alignment$distance
+
+symmetric1
+symmetric2 # this is default step pattern
+asymmetric
+rabinerJuangStepPattern(4, "c", TRUE)
+```
+
+- Once the package is loaded, an instance representing this recursion is pre-defined under the name symmetric2, which is also the default. For this recursion, the average cost per-step is computed by dividing the cumulative distance by N + M, where N is the length of the query sequence and M is the length of the reference
+- It should be noted that, in general, step patterns impose a lower and/or an upper bound to the local slope of the alignment. In other words, they limit the maximum amount of time stretch and compression allowed at any point of the alignment.
+
+## 3.2. Normalization
+- Each step patterns requires a different normalization function. In dtw, objects of class stepPattern know the proper normalization formula they require, called normalization hint".
+
+## 3.3. A note on indexing conventions and axes
+- As a general rule, we stick to the convention that the first argument and indices refer to the query time series, and the second to the reference. This implies that when we print alignment-related matrices such as d(i; j), the query index grows row-wise towards the bottom.
+
+## 3.4. Windowing and global constraints
+- **A global constraint, or window, explicitly forbids warping curves to enter some region of the (i; j) plane.** A global constraint translates an a-priori knowledge about the fact that the time distortion is limited.
+- **It should be remarked that the Sakoe-Chiba band works well when N ~ M, but is inappropriate when the lengths of the two inputs differ significantly.**
+
+```{r}
+dtwWindow.plot(sakoeChibaWindow, window.size = 2, reference = 17, query = 13)
+```
+
+- In this degenerate case, element (N;M) at the upper-right is outside of the band, so the endpoint constraint (5) can't be satisfied: this band is too narrow to be compatible with any global alignment.
+
+## 3.5. Unconstrained endpoints: Prefix and subsequence matches
+- In certain applications, partial matches are useful, and one consequently relaxes one or both the constraints
+
+## 3.9. A worked-out exercise
+```{r}
+lm <- matrix(nrow = 6, ncol = 6, byrow = TRUE, c(
++ 1, 1, 2, 2, 3, 3,
++ 1, 1, 1, 2, 2, 2,
++ 3, 1, 2, 2, 3, 3,
++ 3, 1, 2, 1, 1, 2,
++ 3, 2, 1, 2, 1, 2,
++ 3, 3, 3, 2, 1, 2))
+
+alignment <- dtw(lm, step = asymmetric, keep = TRUE)
+alignment$costMatrix
+alignment$normalizedDistance
+```
+
+- If the parameter keep.internals is TRUE, the local distance matrix and the cumulative cost matrix are preserved after the calculation, and stored in the result elements localCostMatrix and costMatrix, respectively
+```{r}
+lcm <- alignment$localCostMatrix
+image(x = 1:nrow(lcm), y = 1:ncol(lcm), lcm)
+text(row(lcm), col(lcm), label = lcm)
+lines(alignment$index1, alignment$index2)
+
+ccm <- alignment$costMatrix
+image(x = 1:nrow(ccm), y = 1:ncol(ccm), ccm)
+text(row(ccm), col(ccm), label = ccm)
+lines(alignment$index1, alignment$index2)
+```
+
+## 4. Displaying alignments
+### 4.1. Two-way plotting
+```{r}
+ref <- window(aami3a, start = 0, end = 2)
+test <- window(aami3a, start = 2.7, end = 5)
+plot(dtw(test, ref, k = TRUE), type = "two", off = 1, match.lty = 2, match.indices = 20)
+```
+
+### 4.2. Three-way plotting
+```{r}
+# example(dtwPlotThreeWay)
+
+idx<-seq(0,6.28,len=100);
+query<-sin(idx)+runif(100)/10;
+reference<-cos(idx)
+dtw(query,reference,keep=TRUE)->alignment;
+dtwPlotThreeWay(alignment);
+
+hq <- (0:8)/8       
+hq <- round(hq*100)    #  indices in query for  pi/4 .. 7/4 pi
+hw <- (alignment$index1 %in% hq)   # where are they on the w. curve?
+hi <- (1:length(alignment$index1))[hw]   # get the indices of TRUE elems
+dtwPlotThreeWay(alignment,match.indices=hi)
+```
+
+```{r}
+example(dtwPlotDensity)
+```
+
+
+
+
+
+
+
+
+

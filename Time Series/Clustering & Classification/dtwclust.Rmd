@@ -1,0 +1,256 @@
+---
+title: "dtwclust"
+author: "Lian"
+date: "2017年2月17日"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    theme: readable
+    highlight: tango
+    code_folding: show
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Packages
+```{r, message=FALSE, warning=FALSE}
+library(dtwclust)
+library(TSclust)
+library(TSdist)
+library(cluster)
+library(doParallel)
+data("uciCT")
+```
+
+## B. Registering a custom distance with proxy
+- As a first example, the autocorrelation-based distance included in the `TSclust` package is registered with proxy so that it can be used either directly, or with dtwclust. **See more methods in `diss` function in TSclust**
+```{r}
+proxy::pr_DB$set_entry(FUN = diss.ACF, names = c("ACFD"), loop = TRUE, type = "metric", distance = TRUE, description = "Autocorrelation-based distance")
+# Taking just a subset of the data
+# Note that subsetting with single brackets preserves the list format
+proxy::dist(CharTraj[3:8], method = "ACFD", upper = TRUE)
+```
+
+- The `TSdist` package aggregates a large amount of distance measures specifically tailored to time-series. Thanks to the way dtwclust is structured, making use of any of those distances is extremely simple, as the next example shows.
+```{r}
+# Register the Fourier distance
+proxy::pr_DB$set_entry(FUN = FourierDistance, names = c("fourier"), loop = TRUE, type = "metric", distance = TRUE, description = "Distance with Fourier coefficients")
+# Fourier distance requires equal length
+data <- reinterpolate(CharTraj, new.length = max(lengths(CharTraj)))
+# Partitional clustering
+dtwclust(data[1L:10L], k = 2L, distance = "fourier", seed = 838)
+```
+
+- **The user is also free to modify or create distance functions and use them.** For instance, a wrapper to the dtw function in dtw can be created in order to use the asymmetric step pattern and the normalized distance.
+```{r}
+# Normalized DTW
+ndtw <- function(x, y, ...) {
+  dtw(x, y, ...,
+  step.pattern = asymmetric,
+  distance.only = TRUE)$normalizedDistance
+}
+# Register the distance with proxy
+proxy::pr_DB$set_entry(FUN = ndtw, names = c("nDTW"), loop = TRUE, type = "metric", distance = TRUE, description = "Normalized, asymmetric DTW")
+# Partitional clustering
+dtwclust(CharTraj[1L:10L], k = 2L, distance = "nDTW", seed = 838)
+```
+
+## C. Finding nearest neighbors in DTW space
+- In the following example, the nearest neighbors in DTW space of the first 5 time-series are found in two different ways, first calculating all DTW distances, and then using dtw_lb to leverage LB_Improved. Since the LB is only defined for series of equal length, reinterpolation is performed.
+```{r}
+# Reinterpolate to same length
+data <- reinterpolate(CharTraj, new.length = max(lengths(CharTraj)))
+# Calculate the DTW distances between all elements
+system.time(D1 <- proxy::dist(data[1L:5L], data[6L:100L], method = "dtw_basic",
+window.size = 20L))
+# Nearest neighbors
+NN1 <- apply(D1, 1L, which.min)
+# Calculate the distance matrix with dtw_lb
+system.time(D2 <- dtw_lb(data[1L:5L], data[6L:100L], window.size = 20L))
+# Nearest neighbors
+NN2 <- apply(D2, 1L, which.min)
+# Same results?
+all(NN1 == NN2)
+```
+
+- **Finding nearest neighbors can be used for time-series classification. A very basic but surprisingly competitive algorithm is the 1-nearest-neighbor classifier**, which could be implemented as follows.
+```{r}
+classify_series <- function(query) {
+  # Exclude a series as an example
+  database <- data[-100L]
+  # Nearest neighbor
+  nn <- which.min(dtw_lb(query, database, window.size = 18L))
+  # Return a label
+  CharTrajLabels[nn]
+}
+# 100-th series is a Z character
+classify_series(data[100L])
+```
+
+## D. Hierarchical clustering examples
+- In the following call to dtwclust, specifying the value of k indicates the number of desired clusters, so that the cutree function is called internally. Additionally, the shape extraction function is provided in the centroid argument so that, once the k clusters are obtained, their prototypes are extracted. Therefore, the data is z -normalized by means of the zscore function.
+```{r}
+# shape-based distance!!
+hc_sbd <- dtwclust(CharTraj, type = "h", k = 20L, method = "average", preproc = zscore, distance = "sbd", centroid = shape_extraction, seed = 899, control = list(trace = TRUE))
+
+# Cluster sizes
+table(hc_sbd@cluster)
+
+# By default, the dendrogram is plotted in hierarchical clustering
+plot(hc_sbd)
+
+# The series and the obtained prototypes can be plotted too
+plot(hc_sbd, type = "sc")
+
+# Focusing on the first cluster
+plot(hc_sbd, type = "series", clus = 1L)
+plot(hc_sbd, type = "centroids", clus = 1L)
+```
+
+- As of dtwclust version 3.0.0, it is also possible to use other functions for hierarchical procedures by providing them in the method argument. However, there are two important considerations: such a function will receive the lower triangular part of the distance matrix, and it should return a classed object that supports coercion to hclust objects via the as.hclust generic. The functions in the cluster package (Maechler et al. 2016) follow this convention, so, as an example, using them in conjunction with dtwclust is straightforward.
+```{r}
+require("cluster")
+dtwclust(CharTraj[1L:20L], type = "h", k = 4L, distance = "dtw_basic", method = diana, control = list(window.size = 18L))
+```
+
+## E. Partitional clustering examples
+- In this example, four different partitional clustering strategies are used
+
+1. one uses the DTW2 distance and DBA centroids
+2. then dtw_lb and DBA centroids are used (which provides the same results as using the DTW distance directly; see Section 2.1.2)
+3. then k-Shape
+4. finally TADPole
+
+- The results are evaluated using **Variation of Information (see Section 6), with lower numbers indicating better results.** Note that z -normalization is applied by default when selecting shape extraction as the centroid function. For consistency, all algorithms used the reinterpolated and normalized data, since some algorithms require series of equal length. A subset of the data is used for speed. The outcome should not be generalized to other data, and **normalization/reinterpolation may actually worsen some of the algorithms' performance.**
+```{r}
+# Reinterpolate to same length
+data <- reinterpolate(CharTraj, new.length = max(lengths(CharTraj)))
+# z-normalization
+data <- zscore(data[60L:100L])
+# Extra 'trace' is for DBA
+pc_dtw <- dtwclust(data, k = 4L, distance = "dtw_basic", centroid = "dba", trace = TRUE, seed = 8, control = list(window.size = 20L, norm = "L2", trace = TRUE))
+
+pc_dtwlb <- dtwclust(data, k = 4L, distance = "dtw_lb", centroid = "dba", trace = TRUE, seed = 8, control = list(window.size = 20L, norm = "L2", trace = TRUE))
+
+pc_ks <- dtwclust(data, k = 4L, distance = "sbd", centroid = "shape", seed = 8, control = list(trace = TRUE))
+
+pc_tp <-dtwclust(data, k = 4L, type = "tadpole", dc = 1.5, seed = 8, control = list(window.size = 20L, trace = TRUE))
+```
+
+- Compute different cluster validity indices (CVIs) of a given cluster partition, using the clustering distance measure and centroid function if applicable.
+```{r}
+sapply(list(DTW = pc_dtw, DTW_LB = pc_dtwlb, kShape = pc_ks, TADPole = pc_tp), cvi, b = CharTrajLabels[60L:100L], type = "VI")
+```
+
+## F. Fuzzy clustering example
+- This example performs autocorrelation-based fuzzy clustering as proposed by D'Urso and Maharaj (2009). Using the autocorrelation function overcomes the problem of time-series with different length.
+```{r}
+# Calculate autocorrelation up to 50th lag
+acf_fun <- function(dat, ...) {
+  lapply(dat, function(x) {
+  as.numeric(acf(x, lag.max = 50, plot = FALSE)$acf)
+  })
+}
+# Fuzzy c-means
+fc <- dtwclust(CharTraj[1:20], type = "f", k = 4L, preproc = acf_fun, distance = "L2", seed = 42)
+# Fuzzy membership matrix
+fc@fcluster
+
+# Are constraints fulfilled?
+all.equal(rep(1, 20), rowSums(fc@fcluster), check.attributes = FALSE)
+
+# Plot crisp partition in the original space
+plot(fc, data = CharTraj[1:20], type = "series")
+```
+
+## G. Using the doParallel package for parallel computation
+- The example below does the backend registration and calls dtwclust, returning to sequential computation after it finishes. It only uses 2 parallel workers, but more can be configured depending on each processor (see function detectCores in R).
+
+```{r}
+require("doParallel")
+pc_par <- dtwclust(CharTraj[1L:20L], k = 4L, distance = "dtw_basic", centroid = "dba", seed = 938, control = list(trace = TRUE, window.size = 15L))
+# Create parallel workers
+workers <- makeCluster(2L)
+# Preload dtwclust in each worker; not necessary but useful
+invisible(clusterEvalQ(workers, library("dtwclust")))
+# Register the backend; this step MUST be done
+registerDoParallel(workers)
+# Calling dtwclust
+pc_par <- dtwclust(CharTraj[1L:20L], k = 4L, distance = "dtw_basic", centroid = "dba", seed = 938, control = list(trace = TRUE, window.size = 15L))
+# Stop parallel workers
+stopCluster(workers)
+# Go back to sequential computation
+registerDoSEQ()
+```
+
+## H. Cluster evaluation examples
+- **The easiest way to evaluate partitional and hierarchical clustering results is with the cvi function**, which supports both internal and external CVIs (in case the ground truth is known). In the following example, different numbers of clusters are computed and, **using internal CVIs, it is possible to assess which one resulted in a partition with more purity**. According to the Silhouette index, 6 is the optimum number of clusters, whereas the CH index suggests using only 2, but the DB* and Dunn indices suggest the true number of clusters, namely 4.
+
+```{r}
+# z-normalization
+data <- zscore(CharTraj[1L:20L])
+pc_k <- dtwclust(data, type = "p", k = 2L:6L, distance = "dtw_basic", centroid = "pam", seed = 93, control = list(window.size = 20L))
+names(pc_k) <- paste0("k_", 2L:6L)
+
+sapply(pc_k, cvi, type = "internal")
+```
+
+- If we choose the value of k = 4, we could then compare results among different random repetitions with help of the clue package (or with CVIs again).
+```{r}
+pc_4 <- dtwclust(data, type = "p", k = 4L, distance = "dtw_basic", centroid = "pam", seed = 93, control = list(window.size = 20L, nrep = 5L))
+names(pc_4) <- paste0("r_", 1L:5L)
+pc_4 <- cl_ensemble(list = pc_4)
+cl_dissimilarity(pc_4)
+
+# Confusion matrix
+table(Medoid = cl_class_ids(cl_medoid(pc_4)), "True Classes" = rep(c(4,2,3,1), each = 5L))
+```
+
+- The same could be done for hierarchical procedures, as the next example shows. All linkage methods yielded the same results.
+```{r}
+hclust_methods <- c("single", "complete", "average", "mcquitty")
+hc <- dtwclust(data, type = "h", k = 4L, method = hclust_methods, distmat = pc_4[[1L]]@distmat)
+names(hc) <- hclust_methods
+hc <- cl_ensemble(list = hc)
+cl_dissimilarity(hc)
+```
+
+## I. Extensibility examples
+- In this example, **a weighted mean centroid is desired and implemented as follows**. The usefulness of such an approach is of course questionable.
+```{r}
+# Formal arguments before ... must be the same
+weighted_mean_cent <- function(x, cl_id, k, cent, cl_old, ..., weights = rep(1, length(x))) {
+  x <- mapply(x, weights, SIMPLIFY = FALSE, FUN = function(ts, w) { w * ts })
+  x_split <- split(x, cl_id)
+  new_cent <- lapply(x_split, function(xx) {
+  xx <- do.call(rbind, xx)
+  colMeans(xx)
+  })
+  new_cent
+}
+
+data <- reinterpolate(CharTraj, new.length = max(lengths(CharTraj)))
+dtwclust(data[1L:10L], type = "p", k = 2L, distance = "Manhattan", centroid = weighted_mean_cent, seed = 123, weights = rep(c(0.9,1.1), each = 5L))
+```
+
+- Formal objects can be created with the create_dtwclust function. For instance, the following would reproduce the result of TADPole clustering, enabling the usage of the cvi function (and any other generic that has methods for dtwclust objects).
+
+```{r}
+tadp <- TADPole(data[1L:20L], k = 4L, dc = 1.5, window.size = 15L)
+tp_obj <- create_dtwclust(type = "tadpole", datalist = data[1L:20L], centroids = data[tadp$centroids], cluster = tadp$cl, control = list(window.size = 15L, norm = "L2"), distance = "dtw_lb", centroid = "PAM_TADPole")
+cbind(cvi(tp_obj, CharTrajLabels[1L:20L]))
+```
+
+- Assuming the following results were obtained by applying k-Shape independently of dtwclust, the following would reproduce the values in a formal class, which can then be used, for example, to **predict cluster membership of new data.**
+```{r}
+ks_obj <- create_dtwclust(type = "partitional", datalist = zscore(CharTraj)[-100L], centroids = zscore(CharTraj[seq(1L, 100L, 5L)]), cluster = unclass(CharTrajLabels)[-100L], distance = "sbd", centroid = "shape")
+## Preprocessing is performed by ks_obj@family@preproc
+predict(ks_obj, newdata = CharTraj[100L])
+```
+
