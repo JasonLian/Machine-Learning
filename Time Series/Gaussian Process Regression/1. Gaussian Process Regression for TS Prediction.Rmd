@@ -1,0 +1,161 @@
+---
+title: "Gaussian Process Regression"
+author: "Lian"
+date: "2017年3月9日"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+    theme: readable
+    highlight: tango
+    code_folding: show
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 0. Load Packages
+```{r}
+library(kernlab)
+library(ggplot2)
+library(gplots)
+library(forecast)
+library(data.table)
+library(tidyr)
+library(plotly)
+```
+
+## 1. TS1
+#### 1.1 Trend & Seasonality
+```{r}
+ts1 <- readRDS("ts1.rds")
+
+ts1 <- cbind(ts1, t=1:nrow(ts1), seasonaldummy(ts1$demand))
+
+temp <- data.table(ts1)
+ts1
+fit <- gausspr(demand~t, data=temp)
+temp$fitted <- predict(fit, temp[,.(t)])
+ggplot(temp, aes(x=year_month, group=1)) + geom_line(aes(y=demand, col="demand"), size=1) + geom_line(aes(y=fitted, col="fitted"), size=1) + theme_bw() + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1)) + scale_x_discrete(breaks=temp$year_month[seq(2,44,3)])
+
+# 去趋势，检查季节性
+temp$demand_detrend <- temp$demand - temp$fitted
+ggplot(temp, aes(x=year_month, group=1)) + geom_line(aes(y=demand, col="demand"), size=1) + geom_line(aes(y=fitted, col="fitted"), size=1) + geom_line(aes(y=demand_detrend, col="demand_detrend")) + theme_bw() + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1)) + scale_x_discrete(breaks=temp$year_month[seq(2,44,3)])
+
+# 雷达图
+ggseasonplot(temp$demand_detrend, polar=TRUE) + ggtitle("Seasonal Plot") + geom_line(size=1) + theme_bw()
+ggseasonplot(temp$demand_detrend, polar=FALSE) + ggtitle("Seasonal Plot") + geom_line(size=1) + theme_bw() + geom_point(size=2) + ggtitle("Seasoanl Plot after Removing Trend")
+# 箱形图
+ggplot(temp, aes(x=month, y=demand_detrend)) + geom_boxplot() + theme_bw()
+
+# 获取季节 cv 最小的前 3 个季节！
+as.numeric(temp[, .(cv=sd(demand_detrend)/mean(abs(demand_detrend))), by=month][order(cv)][1:3,month])
+
+```
+
+#### 1.2 Gusssian Process Prediction
+##### 1.2.1 趋势
+```{r}
+temp1 <- data.table(ts1, fitted=0)
+for (k in 0:9){
+  train <- temp1[(1+k):(36+k),3:4]
+  fit <- gausspr(demand~t, data=train)
+  temp1[(37+k), "fitted"] <- predict(fit, temp1[(37+k),.(t)])
+}
+
+```
+
+##### 1.2.2 趋势 + 季节
+```{r}
+temp2 <- data.table(ts1, fitted=0)
+for (k in 0:9){
+  train <- temp2[(1+k):(36+k),3:15]
+  fit <- gausspr(demand~., data=train)
+  temp2[(37+k), "fitted"] <- predict(fit, temp2[(37+k),4:15])
+}
+```
+
+##### 1.2.3 对比结果
+```{r}
+temp <- data.frame(temp1[,c(1:3,16)], temp2[,16])
+colnames(temp)[3:5] <- c("Actual_demand","Predict_trend","Predict_trend+seasonal")
+temp[4:5] <- round(temp[4:5], 2)
+temp[temp==0] <- NA
+
+temp <- gather(temp[,-2], key="Series", value="value", -year_month)
+
+ggplot(temp, aes(x=year_month, y=value, group=Series, col=Series)) + geom_line(size=1) + geom_point() + theme_bw() + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1)) + scale_x_discrete(breaks=temp$year_month[seq(2,44,3)])
+
+```
+
+## 2. TS7
+#### 2.1 Trend & Seasonality
+```{r}
+ts7 <- readRDS("ts7.rds")
+
+ts7 <- cbind(ts7, t=1:nrow(ts7), seasonaldummy(ts7$demand))
+
+temp <- data.table(ts7)
+ts7
+fit <- gausspr(demand~t, data=temp)
+temp$fitted <- predict(fit, temp[,.(t)])
+ggplot(temp, aes(x=year_month, group=1)) + geom_line(aes(y=demand, col="demand"), size=1) + geom_line(aes(y=fitted, col="fitted"), size=1) + theme_bw() + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1)) + scale_x_discrete(breaks=temp$year_month[seq(2,44,3)])
+
+# 去趋势，检查季节性
+temp$demand_detrend <- temp$demand - temp$fitted
+ggplot(temp, aes(x=year_month, group=1)) + geom_line(aes(y=demand, col="demand"), size=1) + geom_line(aes(y=fitted, col="fitted"), size=1) + geom_line(aes(y=demand_detrend, col="demand_detrend")) + theme_bw() + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1)) + scale_x_discrete(breaks=temp$year_month[seq(2,44,3)])
+
+# 雷达图
+ggseasonplot(temp$demand_detrend, polar=TRUE) + ggtitle("Seasonal Plot") + geom_line(size=1) + theme_bw()
+ggseasonplot(temp$demand_detrend, polar=FALSE) + ggtitle("Seasonal Plot") + geom_line(size=1) + theme_bw() + geom_point(size=2) + ggtitle("Seasoanl Plot after Removing Trend")
+# 箱形图
+ggplot(temp, aes(x=month, y=demand_detrend)) + geom_boxplot() + theme_bw()
+
+# 获取季节 cv 最小的前 3 个季节！
+as.numeric(temp[, .(cv=sd(demand_detrend)/mean(abs(demand_detrend))), by=month][order(cv)][1:3,month])
+
+```
+
+#### 1.2 Gusssian Process Prediction
+##### 1.2.1 趋势
+```{r}
+temp1 <- data.table(ts7, fitted=0)
+for (k in 0:9){
+  train <- temp1[(1+k):(36+k),3:4]
+  fit <- gausspr(demand~t, data=train)
+  temp1[(37+k), "fitted"] <- predict(fit, temp1[(37+k),.(t)])
+}
+
+```
+
+##### 1.2.2 趋势 + 季节
+```{r}
+temp2 <- data.table(ts7, fitted=0)
+for (k in 0:9){
+  train <- temp2[(1+k):(36+k),3:15]
+  fit <- gausspr(demand~., data=train)
+  temp2[(37+k), "fitted"] <- predict(fit, temp2[(37+k),4:15])
+}
+```
+
+##### 1.2.3 对比结果
+```{r}
+temp <- data.frame(temp1[,c(1:3,16)], temp2[,16])
+colnames(temp)[3:5] <- c("Actual_demand","Predict_trend","Predict_trend+seasonal")
+temp[4:5] <- round(temp[4:5], 2)
+temp[temp==0] <- NA
+
+temp <- gather(temp[,-2], key="Series", value="value", -year_month)
+
+p <- ggplot(temp, aes(x=year_month, y=value, group=Series, col=Series)) + geom_line(size=1) + geom_point() + theme_bw() + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1)) + scale_x_discrete(breaks=temp$year_month[seq(2,44,3)])
+
+postlink <- plotly_POST(p, filename = "GPR Prediction Example")
+postlink
+```
+
+
+
