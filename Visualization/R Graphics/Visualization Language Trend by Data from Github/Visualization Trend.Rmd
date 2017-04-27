@@ -1,0 +1,62 @@
+---
+title: "Visualization Trend"
+author: "Lian"
+date: "2017年3月18日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 0. Load Packages
+```{r}
+library(data.table)
+library(ggplot2)
+library(plotly)
+library(tidyr)
+```
+
+## 1. Data Preprocessing
+```{r}
+data_raw <- data.frame(Language=c("Javascript","Python","HTML","Java","R","C++","CSS","Jupyter Notebook"), after_2010=c(13157,4469,3679,2679,1933,1795,1120,908),  after_2011=c(13047,4411,3678,2571,1933,1758,1118,908), after_2012=c(12780,4299,3675,2460,1917,1679,1114,908), after_2013=c(12073,4061,3649,2194,1879,1537,1103,906), after_2014=c(10574,3605,3585,1894,1769,1331,957,902), after_2015=c(8187,2854,3417,1477,1448,1030,689,891), after_2016=c(5082,1857,2220,850,969,602,410,810), after_2017=c(948,465,478,156,215,107,80,236))
+```
+
+```{r}
+data <-data_raw
+data$`2010` <- data$after_2010-data$after_2011
+data$`2011` <- data$after_2011-data$after_2012
+data$`2012` <- data$after_2012-data$after_2013
+data$`2013` <- data$after_2013-data$after_2014
+data$`2014` <- data$after_2014-data$after_2015
+data$`2015` <- data$after_2015-data$after_2016
+data$`2016` <- data$after_2016-data$after_2017
+
+data$Language <- factor(data$Language, levels=c("Javascript","Python","HTML","Java","R","C++","CSS","Jupyter Notebook"))
+data$Type <- c("Primary","Primary","Auxiliary","Primary","Primary","Primary","Auxiliary","Auxiliary")
+```
+
+## 2. ggplot2
+```{r}
+data_plot <- gather(data[, c(1,10:17)], key="Year", value="Quantity", -c(Language, Type))
+data_plot$Year <- factor(data_plot$Year, levels=c("2016","2015","2014","2013","2012","2011","2010"))
+```
+
+```{r}
+# 折线图
+ggplot(data=data_plot, aes(x=Year, y=Quantity, group=Language, color=Language)) + geom_line(size=1.2)  + geom_point(aes(shape=Language), size=2) + theme_bw() + scale_shape_manual(values=1:8)
+```
+
+```{r}
+# 条形图
+p <- ggplot(data=data_plot, aes(x=Language, y=Quantity, fill=Year)) + geom_bar(stat="identity") + theme_bw() + theme(axis.text.x=element_text(angle=45,hjust=1,vjust=1)) + ggtitle("Visualization Language Trend from 2010 to 2016") + facet_wrap(~Type, scales="free_x")
+p
+pl <- ggplotly(p)
+# Create a shareable link to your chart
+chart_link = plotly_POST(pl, filename="ggplot2-plotly-example1")
+chart_link
+```
+
+
+
+

@@ -1,0 +1,166 @@
+---
+title: "LDA"
+author: "Lian"
+date: "2017年4月19日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 0. Load Packages
+```{r, message=FALSE, warning=FALSE}
+# install.packages("topicmodels")
+library(topicmodels)
+library(tm)
+```
+
+## 1. Load Dataset
+```{r}
+data("AssociatedPress")
+AssociatedPress
+```
+
+DocumentTermMatrix objects
+```{r}
+terms <- Terms(AssociatedPress)
+head(terms)
+```
+
+## 2. one-token-per-document-per-row
+If we wanted to analyze this data with tidy tools, we would first need to turn it into a data frame with one-token-per-document-per-row.
+
+```{r}
+library(dplyr)
+# install.packages("tidytext")
+library(tidytext)
+
+ap_td <- tidy(AssociatedPress)
+ap_td
+```
+
+Notice that only the non-zero values are included in the tidied output.
+
+As we’ve seen in previous chapters, this form is convenient for analysis with the dplyr, tidytext and ggplot2 packages. For example, you can perform sentiment analysis on these newspaper articles.
+
+```{r}
+ap_sentiments <- ap_td %>%
+  inner_join(get_sentiments("bing"), by = c(term = "word"))
+
+ap_sentiments
+```
+
+This would let us visualize which words from the AP articles most often contributed to positive or negative sentiment, seen in Figure 5.2. We can see that the most common positive words include “like”, “work”, “support”, and “good”, while the most negative words include “killed”, “death”, and “vice”. (The inclusion of “vice” as a negative term is probably a mistake on the algorithm’s part, since it likely usually refers to “vice president”).
+
+```{r}
+library(ggplot2)
+
+ap_sentiments %>%
+  count(sentiment, term, wt = count) %>%
+  ungroup() %>%
+  filter(n >= 200) %>%
+  mutate(n = ifelse(sentiment == "negative", -n, n)) %>%
+  mutate(term = reorder(term, n)) %>%
+  ggplot(aes(term, n, fill = sentiment)) +
+  geom_bar(stat = "identity") +
+  ylab("Contribution to sentiment") +
+  coord_flip()
+```
+
+## 3. LDA
+We can use the LDA() function from the topicmodels package, setting k = 2, to create a two-topic LDA model.
+
+```{r}
+ap_lda <- LDA(AssociatedPress, k = 2, control = list(seed = 1234))
+ap_lda
+```
+
+### 3.1 Word-topic probabilities
+The tidytext package provides this method for extracting the per-topic-per-word probabilities, called  β  (“beta”), from the model.
+
+```{r}
+library(tidytext)
+
+ap_topics <- tidy(ap_lda, matrix = "beta")
+ap_topics
+```
+
+Notice that this has turned the model into a one-topic-per-term-per-row format. For each combination, the model computes the probability of that term being generated from that topic. For example, the term “aaron” has a  1.686917×10−121.686917×10−12  probability of being generated from topic 1, but a  3.8959408×10−53.8959408×10−5 probability of being generated from topic 2.
+
+We could use dplyr’s top_n() to find the 10 terms that are most common within each topic. As a tidy data frame, this lends itself well to a ggplot2 visualization
+
+```{r}
+library(ggplot2)
+library(dplyr)
+
+ap_top_terms <- ap_topics %>%
+  group_by(topic) %>%
+  top_n(10, beta) %>%
+  ungroup() %>%
+  arrange(topic, -beta)
+
+ap_top_terms %>%
+  mutate(term = reorder(term, beta)) %>%
+  ggplot(aes(term, beta, fill = factor(topic))) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ topic, scales = "free") +
+  coord_flip()
+```
+
+The most common words in topic 1 include “percent”, “million”, “billion”, and “company”, which suggests it may represent business or financial news. Those most common in topic 2 include “president”, “government”, and “soviet”, suggeting that this topic represents political news.
+
+One important observation about the words in each topic is that some words, such as “new” and “people”, are common within both topics. This is an advantage of topic modeling as opposed to “hard clustering” methods: topics used in natural language could have some overlap in terms of words.
+
+As an alternative, we could consider the terms that had the greatest difference in  ββ  between topic 1 and topic 2. This can be estimated based on the log ratio of the two:  log2(β2β1)log2a(β2β1)  (a log ratio is useful because it makes the difference symmetrical:  β2β2  being twice as large leads to a log ratio of 1, while  β1β1  being twice as large results in -1). To constrain it to a set of especially relevant words, we can filter for relatively common words, such as those that have a  ββ  greater than 1/1000 in at least one topic.
+
+```{r}
+library(tidyr)
+
+beta_spread <- ap_topics %>%
+  mutate(topic = paste0("topic", topic)) %>%
+  spread(topic, beta) %>%
+  filter(topic1 > .001 | topic2 > .001) %>%
+  mutate(log_ratio = log2(topic2 / topic1))
+
+beta_spread
+```
+
+The words with the greatest differences between the two topics are visualized
+
+### 3.2 Document-topic probabilities
+Besides estimating each topic as a mixture of words, LDA also models each document as a mixture of topics. We can examine the per-document-per-topic probabilities, called  γγ  (“gamma”), with the matrix = "gamma" argument to tidy().
+
+```{r}
+ap_documents <- tidy(ap_lda, matrix = "gamma")
+ap_documents
+```
+
+Each of these values is an estimated proportion of words from that document that are generated from that topic. For example, the model estimates that only about 24.8% of the words in document 1 were generated from topic 1.
+
+We can see that many of these documents were drawn from a mix of the two topics, but that document 6 was drawn almost entirely from topic 2, having a  γγ  from topic 1 close to zero. To check this answer, we could tidy() the document-term matrix (see Chapter 5.1) and check what the most common words in that document were.
+
+```{r}
+tidy(AssociatedPress) %>%
+  filter(document == 6) %>%
+  arrange(desc(count))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

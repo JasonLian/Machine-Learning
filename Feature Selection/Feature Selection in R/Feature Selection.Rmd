@@ -1,0 +1,82 @@
+---
+title: "Feature Selection"
+author: "Lian"
+date: "2017年3月13日"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# install.packages("mlr")
+# install.packages("ggvis")
+# install.packages("Rfast")
+library(mlr)
+library(randomForest)
+library(ggvis)
+library(Rfast)
+```
+
+
+### 1. Filter Method
+- Filter methods assign an importance value to each feature. Based on these values the features can be ranked and a feature subset can be selected.
+
+#### 1.1 Calculating the feature importance
+- Different methods for calculating the feature importance are built into mlr's function `generateFilterValuesData`. 
+- Currently, **classification, regression and survival analysis** tasks are supported. A table showing all available methods can be found here.
+- Function generateFilterValuesData requires the [Task](https://www.rdocumentation.org/packages/mlr/versions/2.10/topics/makeClassifTask) and a character string specifying the filter method.
+
+```{r}
+iris.task <- makeClassifTask(data = iris, target = "Species")
+fv = generateFilterValuesData(iris.task, method = "information.gain")
+fv$data
+fv2 = generateFilterValuesData(iris.task, method = c("information.gain",  "chi.squared"))
+fv2$data
+```
+
+```{r}
+house.task <- makeRegrTask(data = data, target = "medv")
+fv3 = generateFilterValuesData(house.task, method = c("information.gain", "linear.correlation"))
+fv3$data
+```
+
+
+- fv is a `FilterValues` object and `fv$data` contains a data.frame that gives the importance values for all features. Optionally, a vector of filter methods can be passed.
+
+```{r}
+plotFilterValues(fv2)
+plotFilterValuesGGVIS(fv2)
+```
+
+#### 1.2 Selecting a feature subset
+- With mlr's function `filterFeatures` you can create a new **Task** by leaving out features of lower importance.
+- There are several ways to select a feature subset based on feature importance values:
+  - Keep a certain absolute number (abs) of features with highest importance.
+  - Keep a certain percentage (perc) of features with highest importance.
+  - Keep all features whose importance exceeds a certain threshold value (threshold).
+- Function `filterFeatures` supports these three methods as shown in the following example. Moreover, you can either specify the method for calculating the feature importance or you can use previously computed importance values via argument `fval`.
+
+```{r}
+## Keep the 2 most important features
+filtered.task = filterFeatures(iris.task, method = "information.gain", abs = 2)
+
+## Keep the 25% most important features
+filtered.task = filterFeatures(iris.task, fval = fv, perc = 0.25)
+
+## Keep all features with importance greater than 0.5
+filtered.task = filterFeatures(iris.task, fval = fv, threshold = 0.5)
+filtered.task
+```
+
+#### 1.3 Fuse a learner with a filter method
+
+
+
+### 2. Wrapper Method
+
+
+
+### Reference
+- [Feature Selection from mlr-org](https://mlr-org.github.io/mlr-tutorial/devel/html/feature_selection/index.html#filter-methods)
